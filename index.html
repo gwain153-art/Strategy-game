@@ -26,7 +26,7 @@
     position:fixed;inset:0;width:100%;height:100%;overflow:hidden}
   @supports (height:100dvh){ html,body{height:100dvh} }
   canvas{display:block}
-  #game{position:fixed;inset:0}
+  #game{position:fixed;inset:0;touch-action:none}
 
   /* ─────────── top strip ─────────── */
   #top{position:fixed;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;gap:2px;
@@ -1111,7 +1111,7 @@ function centreOn(tx,ty,smooth){
   if(smooth){ cam.tx=nx; cam.ty=ny; } else { cam.x=nx; cam.y=ny; cam.tx=null; clamp(); }
 }
 function clamp(){
-  cam.z=Math.max(.3,Math.min(2.8,cam.z));
+  cam.z=Math.max(.3,Math.min(2.2,cam.z));
   const vw=cw/cam.z, vh=ch/cam.z;
   cam.x=Math.max(-vw*.25,Math.min(MAP*TILE-vw*.75,cam.x));
   cam.y=Math.max(-vh*.25,Math.min(MAP*TILE-vh*.75,cam.y));
@@ -1126,16 +1126,25 @@ function camStep(dt){
 const s2w=(sx,sy)=>({x:sx/cam.z+cam.x, y:sy/cam.z+cam.y});
 
 /* ═══════════════════════ TERRAIN: TOPO SHEET ═══════════════════════ */
-let terrain=null, fog=null, fogCtx=null;
+let terrain=null, fog=null, fogCtx=null, TF=1;
+const FS=4;            // fog texels per tile
+let FW=0, fogSeen=null;
 
 function hAt(x,y){
   x=Math.max(0,Math.min(MAP-1,x)); y=Math.max(0,Math.min(MAP-1,y));
   return S.H[y*MAP+x];
 }
-function buildTerrain(){
+function buildTerrain(force){
+  /* one canvas pixel per world pixel is already upscaled 2x on a retina phone,
+     so render the sheet larger — but stay under the iOS canvas area ceiling */
+  TF=force||Math.max(1, Math.min(2, Math.floor((3400/(MAP*TILE))*2)/2));
   terrain=document.createElement("canvas");
-  terrain.width=MAP*TILE; terrain.height=MAP*TILE;
+  try{
+    terrain.width=Math.round(MAP*TILE*TF); terrain.height=Math.round(MAP*TILE*TF);
+    if(!terrain.width) throw 0;
+  }catch(e){ TF=1; terrain.width=MAP*TILE; terrain.height=MAP*TILE; }
   const c=terrain.getContext("2d");
+  c.scale(TF,TF);
 
   /* elevation bands */
   for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
@@ -1220,16 +1229,48 @@ function buildTerrain(){
   for(let gy=0;gy<MAP;gy+=5)for(let gx=0;gx<MAP;gx+=5)
     c.fillText(String(gx).padStart(2,"0")+String(gy).padStart(2,"0"), gx*TILE+3, gy*TILE+2);
 
-  fog=document.createElement("canvas"); fog.width=MAP; fog.height=MAP;
-  fogCtx=fog.getContext("2d");
-}
-function paintFog(){
-  const img=fogCtx.createImageData(MAP,MAP), d=img.data;
-  for(let i=0;i<MAP*MAP;i++){
-    const v=S.vis[i];
-    d[i*4]=10; d[i*4+1]=13; d[i*4+2]=16;
-    d[i*4+3]= v===2?0 : v===1?120 : 243;
+  /* iOS hands back a blank canvas rather than throwing when it can't allocate,
+     so check a pixel actually landed and drop to the small sheet if not */
+  if(!force && TF>1){
+    let ok=false;
+    try{
+      const q=Math.round(MAP*TILE*TF/2);
+      ok = c.getImageData(q,q,1,1).data[3] > 0;
+    }catch(e){ ok=true; }          // reading may be blocked, assume fine
+    if(!ok) return buildTerrain(1);
   }
+
+  FW=(MAP+2)*FS;
+  fog=document.createElement("canvas"); fog.width=FW; fog.height=FW;
+  fogCtx=fog.getContext("2d");
+  fogSeen=new Uint8Array(FW*FW);
+}
+/* Painted at FS texels per tile from the same circles vision uses, so the edge
+   is round and its blur is a quarter tile instead of a whole one. One tile of
+   padding stops the border texels stretching off the edge of the map. */
+function paintFog(){
+  const img=fogCtx.createImageData(FW,FW), d=img.data;
+  for(let i=0;i<FW*FW;i++){
+    d[i*4]=10; d[i*4+1]=13; d[i*4+2]=16;
+    d[i*4+3]= fogSeen[i]?120:243;
+  }
+  const v=mVis(HUMAN);
+  const disc=(cx,cy,r)=>{
+    cx=(cx+1)*FS; cy=(cy+1)*FS; r*=FS;
+    const r2=r*r;
+    const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(FW-1,Math.ceil(cx+r));
+    const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(FW-1,Math.ceil(cy+r));
+    for(let y=y0;y<=y1;y++){
+      const dy=y+.5-cy, rem=r2-dy*dy;
+      if(rem<0) continue;
+      const half=Math.sqrt(rem);
+      const a=Math.max(x0,Math.ceil(cx-half-.5)), b=Math.min(x1,Math.floor(cx+half-.5));
+      let i=y*FW+a;
+      for(let x=a;x<=b;x++,i++){ d[i*4+3]=0; fogSeen[i]=1; }
+    }
+  };
+  for(const u of S.units) if(u.owner===HUMAN) disc(u.x,u.y,U[u.key].vis*v);
+  for(const b of S.buildings) if(b.owner===HUMAN&&b.hp>0) disc(b.x+.5,b.y+.5,B[b.key].vis*v);
   fogCtx.putImageData(img,0,0);
 }
 function shade(hex,a){
@@ -1245,7 +1286,7 @@ function draw(dt){
   ctx.fillStyle="#0a0d10"; ctx.fillRect(0,0,cw,ch);
   ctx.save(); ctx.scale(cam.z,cam.z); ctx.translate(-cam.x,-cam.y);
   const vw=cw/cam.z, vh=ch/cam.z;
-  ctx.drawImage(terrain,cam.x,cam.y,vw,vh,cam.x,cam.y,vw,vh);
+  ctx.drawImage(terrain,cam.x*TF,cam.y*TF,vw*TF,vh*TF,cam.x,cam.y,vw,vh);
 
   /* control zones */
   ctx.lineWidth=1.2/cam.z;
@@ -1333,7 +1374,7 @@ function draw(dt){
   }
 
   ctx.imageSmoothingEnabled=true;
-  ctx.drawImage(fog,0,0,MAP,MAP,0,0,MAP*TILE,MAP*TILE);
+  ctx.drawImage(fog,0,0,FW,FW,-TILE,-TILE,(MAP+2)*TILE,(MAP+2)*TILE);
   ctx.restore();
 }
 
@@ -1706,7 +1747,7 @@ function drawMini(){
   mc.imageSmoothingEnabled=false;
   mc.clearRect(0,0,216,216);
   mc.drawImage(mmT,0,0,216,216);
-  mc.drawImage(fog,0,0,MAP,MAP,0,0,216,216);
+  mc.drawImage(fog,FS,FS,MAP*FS,MAP*FS,0,0,216,216);
   for(const [,m] of S.memB) if(!visT(m.x,m.y)){
     mc.fillStyle="rgba(168,50,43,.5)"; mc.fillRect(m.x*s,m.y*s,Math.max(3,s),Math.max(3,s)); }
   for(const b of S.buildings){
