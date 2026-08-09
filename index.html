@@ -286,17 +286,21 @@ const HUMAN=0, AI=1;
 const FCOL=["#2f5fa8","#a8322b"];          // NATO blue / red
 const FFILL=["rgba(47,95,168,.90)","rgba(168,50,43,.90)"];
 
-/* ── damage matrix: attacker class → target class ── */
+/* ── damage matrix: attacker class → target class.
+   Ground weapons cannot elevate: only classes flagged aa may fire at aircraft. ── */
 const MTX={
-  inf:    {inf:1.00, at:1.20, veh:0.50, arty:1.50, recon:1.20, structure:0.55},
-  at:     {inf:0.60, at:0.80, veh:2.60, arty:1.20, recon:1.60, structure:0.70},
-  veh:    {inf:1.40, at:1.50, veh:1.00, arty:1.80, recon:1.50, structure:0.90},
-  arty:   {inf:1.50, at:1.50, veh:0.80, arty:1.00, recon:0.90, structure:2.50},
-  recon:  {inf:0.60, at:0.60, veh:0.40, arty:0.80, recon:1.00, structure:0.30},
-  bunker: {inf:1.20, at:1.20, veh:0.90, arty:1.10, recon:1.40, structure:1.00},
+  inf:    {inf:1.00, at:1.20, veh:0.50, arty:1.50, recon:1.20, aa:1.30, air:0, structure:0.55},
+  at:     {inf:0.60, at:0.80, veh:2.60, arty:1.20, recon:1.60, aa:1.10, air:0, structure:0.70},
+  veh:    {inf:1.40, at:1.50, veh:1.00, arty:1.80, recon:1.50, aa:1.60, air:0, structure:0.90},
+  arty:   {inf:1.50, at:1.50, veh:0.80, arty:1.00, recon:0.90, aa:1.40, air:0, structure:2.50},
+  recon:  {inf:0.60, at:0.60, veh:0.40, arty:0.80, recon:1.00, aa:0.60, air:0, structure:0.30},
+  aa:     {inf:0.50, at:0.50, veh:0.30, arty:0.50, recon:0.60, aa:0.50, air:2.60, structure:0.20},
+  air:    {inf:1.60, at:1.40, veh:1.40, arty:1.80, recon:1.40, aa:1.20, air:0, structure:1.50},
+  fighter:{inf:0.30, at:0.30, veh:0.20, arty:0.30, recon:0.30, aa:0.30, air:2.20, structure:0.15},
+  bunker: {inf:1.20, at:1.20, veh:0.90, arty:1.10, recon:1.40, aa:1.00, air:0, structure:1.00},
 };
 const CLASS_NAME={inf:"infantry",at:"anti-tank",veh:"vehicles",arty:"artillery",
-  recon:"recon",structure:"structures"};
+  recon:"recon",aa:"anti-air",air:"aircraft",structure:"structures"};
 
 /* ── units ── */
 const U={
@@ -324,6 +328,25 @@ const U={
             spd:0.80,dmg:62, rng:7.0, minR:2.6,rof:4.2, vis:8, shell:1, splash:1.7, req:"howitzers"},
   rocket:  {name:"Rockets",  sym:"•↑",  cls:"arty", hp:120,cost:250,men:14, time:22,
             spd:0.90,dmg:40, rng:8.6, minR:3.2,rof:7.0, vis:8, shell:1, splash:2.6, salvo:5, req:"rockets"},
+
+  /* ── fortification era ── */
+  mortar:  {name:"Mortar",   sym:"^",   cls:"arty", hp:95, cost:58, men:8,  time:8,
+            spd:1.30,dmg:30, rng:3.7, minR:1.2,rof:3.2, vis:5, shell:1, splash:1.1, req:"mortars"},
+  td:      {name:"Tank Dstr",sym:"OT",  cls:"veh",  hp:340,cost:170,men:14, time:14,
+            spd:1.80,dmg:64, rng:3.1, minR:0,  rof:1.9, vis:7, req:"atguns", noTurret:1},
+  aahalf:  {name:"AA Track", sym:"OA",  cls:"aa",   hp:230,cost:120,men:10, time:11,
+            spd:2.40,dmg:34, rng:4.4, minR:0,  rof:1.3, vis:7, aa:1, aaOnly:1, req:"flak"},
+
+  /* ── aviation. Aircraft ignore terrain and can only be hit by AA or fighters ── */
+  spotter: {name:"Spotter",  sym:"s",   cls:"air",  hp:100,cost:65, men:4,  time:6,
+            spd:3.60,dmg:0,  rng:0,   minR:0,  rof:0,   vis:15,air:1, req:"aviation"},
+  fighter: {name:"Fighter",  sym:"f",   cls:"air",  hp:230,cost:155,men:10, time:12,
+            spd:4.20,dmg:46, rng:2.3, minR:0,  rof:1.2, vis:10,air:1, aa:1, aaOnly:1,
+            wcls:"fighter", req:"fighters"},
+  bomber:  {name:"Bomber",   sym:"b",   cls:"air",  hp:280,cost:235,men:14, time:18,
+            spd:2.60,dmg:72, rng:1.9, minR:0,  rof:4.0, vis:9, air:1, shell:1, splash:2.0, req:"bombers"},
+  gunship: {name:"Gunship",  sym:"g",   cls:"air",  hp:250,cost:215,men:12, time:16,
+            spd:2.20,dmg:42, rng:2.7, minR:0,  rof:1.6, vis:9, air:1, req:"gunships"},
 };
 
 /* ── buildings ── */
@@ -342,8 +365,19 @@ const B={
             req:"guns", makes:["fieldgun","howitzer","rocket"]},
   radar:   {name:"Radar Post",  sym:"◇", hp:180, cost:130,time:10,sup:0,  men:0, vis:17,ramp:1.20, req:"radar"},
   bunker:  {name:"Bunker",      sym:"▲", hp:340, cost:85, time:8, sup:0,  men:0, vis:7, ramp:1.10,
-            dmg:19, rng:3.6, rof:1.15},
-  trench:  {name:"Trench",      sym:"", hp:420, cost:22, time:3, sup:0,  men:0, vis:2, blocks:true},
+            dmg:19, rng:3.6, rof:1.15, def:1},
+  trench:  {name:"Trench",      sym:"", hp:420, cost:22, time:3, sup:0,  men:0, vis:2, blocks:true, def:1},
+
+  mgnest:  {name:"MG Nest",     sym:"m", hp:230, cost:58, time:6, sup:0,  men:0, vis:6, ramp:1.08,
+            dmg:15, rng:2.7, rof:0.45, wcls:"inf", def:1, req:"fortify"},
+  atgun:   {name:"AT Emplace",  sym:"t", hp:210, cost:125,time:9, sup:0,  men:0, vis:6, ramp:1.10,
+            dmg:58, rng:4.1, rof:2.2, wcls:"at", def:1, req:"atguns"},
+  flak:    {name:"AA Battery",  sym:"a", hp:250, cost:115,time:9, sup:0,  men:0, vis:8, ramp:1.10,
+            dmg:36, rng:5.0, rof:1.4, wcls:"aa", aa:1, aaOnly:1, def:1, req:"flak"},
+  mine:    {name:"Minefield",   sym:"",  hp:70,  cost:38, time:4, sup:0,  men:0, vis:1, ramp:1.04,
+            hidden:1, def:1, mine:1, req:"mines"},
+  airfield:{name:"Airfield",    sym:"✈", hp:340, cost:270,time:18,sup:0,  men:0, vis:8, ramp:1.30,
+            req:"aviation", makes:["spotter","fighter","bomber","gunship"]},
 };
 
 /* ── research tree ── */
@@ -368,10 +402,24 @@ const TECH={
   howitzers:{name:"Howitzers",     br:"ARTILLERY", tier:2, cost:300, time:46, d:"Unlocks Howitzer. Heavy splash", pre:["guns"]},
   rockets:  {name:"Rocket Btty",   br:"ARTILLERY", tier:3, cost:430, time:58, d:"Unlocks Rocket Battery", pre:["howitzers"]},
 
+  mortars:  {name:"Mortars",       br:"ARTILLERY", tier:1, cost:110, time:22, d:"Unlocks Mortar teams"},
+
+  fortify:  {name:"Fortification", br:"DEFENCE",   tier:1, cost:130, time:24, d:"Unlocks MG Nests"},
+  atguns:   {name:"AT Guns",       br:"DEFENCE",   tier:2, cost:230, time:36, d:"Unlocks AT Emplacement and Tank Destroyer", pre:["fortify"]},
+  flak:     {name:"Flak",          br:"DEFENCE",   tier:2, cost:250, time:38, d:"Unlocks AA Battery and AA Track", pre:["fortify"]},
+  mines:    {name:"Minefields",    br:"DEFENCE",   tier:2, cost:200, time:30, d:"Unlocks hidden Minefields", pre:["fortify"]},
+  concrete: {name:"Concrete",      br:"DEFENCE",   tier:3, cost:330, time:48, d:"Defences +55% HP", pre:["atguns"]},
+
+  aviation: {name:"Aviation",      br:"AVIATION",  tier:1, cost:230, time:38, d:"Unlocks Airfield and Spotter plane"},
+  fighters: {name:"Fighters",      br:"AVIATION",  tier:2, cost:310, time:44, d:"Unlocks Fighters. The only answer to enemy air", pre:["aviation"]},
+  bombers:  {name:"Bombers",       br:"AVIATION",  tier:2, cost:350, time:48, d:"Unlocks Bombers", pre:["aviation"]},
+  gunships: {name:"Gunships",      br:"AVIATION",  tier:3, cost:430, time:54, d:"Unlocks Gunships", pre:["bombers"]},
+  airstrike:{name:"Strike Doctrine",br:"AVIATION", tier:3, cost:470, time:58, d:"Call in bombing runs anywhere you can see", pre:["bombers"]},
+
   optics:   {name:"Optics",        br:"RECON",     tier:1, cost:100, time:24, d:"All vision +30%"},
   radar:    {name:"Radar",         br:"RECON",     tier:2, cost:220, time:36, d:"Unlocks Radar Post", pre:["optics"]},
 };
-const BRANCHES=["LOGISTICS","INFANTRY","ARMOUR","ARTILLERY","RECON"];
+const BRANCHES=["LOGISTICS","INFANTRY","ARMOUR","ARTILLERY","DEFENCE","AVIATION","RECON"];
 const TKEYS=Object.keys(TECH);
 
 const DIFF=[
@@ -424,9 +472,9 @@ function newGame(){
 
   S={ H,tiles,deco,
       vis:new Uint8Array(MAP*MAP), aiVis:new Uint8Array(MAP*MAP), memB:new Map(),
-      units:[], buildings:[], fx:[], shells:[], wrecks:[],
+      units:[], buildings:[], fx:[], shells:[], wrecks:[], raids:[], strikeCd:0,
       players:[mkP(),mkP()],
-      sel:[], selB:null, placing:null, rally:false, grally:null, tab:null,
+      sel:[], selB:null, placing:null, rally:false, grally:null, tab:null, striking:0,
       paused:false, over:null, speed:1,
       t:0, aiT:0, visT:0, alertT:0, alertAt:null,
       counts:[{},{}], lastTapId:0, lastTapT:0,
@@ -534,8 +582,9 @@ function techReady(o,k){
 /* ═══════════════════════════ ENTITIES ═══════════════════════════ */
 function mkB(key,o,x,y,instant){
   const d=B[key];
-  const b={id:nextId++,key,owner:o,x,y,hp:instant?d.hp:d.hp*.28,maxHp:d.hp,
-    build:instant?0:d.time,buildT:d.time,queue:null,q:[],cd:0,rally:null,flash:0,smoke:0};
+  const mx=Math.round(d.hp*(d.def&&T(o,"concrete")?1.55:1));
+  const b={id:nextId++,key,owner:o,x,y,hp:instant?mx:mx*.28,maxHp:mx,
+    build:instant?0:d.time,buildT:d.time,queue:null,q:[],cd:0,rally:null,flash:0,smoke:0,armed:1};
   S.buildings.push(b);
   S.counts[o][key]=(S.counts[o][key]||0)+1;
   if(d.blocks) rebuildBlocks();
@@ -631,7 +680,7 @@ function computeVision(){
   mark(S.vis,HUMAN); mark(S.aiVis,AI);
   for(const b of S.buildings){
     if(b.owner===HUMAN) continue;
-    if(S.vis[b.y*MAP+b.x]===2) S.memB.set(b.id,{x:b.x,y:b.y,key:b.key,owner:b.owner});
+    if(S.vis[b.y*MAP+b.x]===2&&!B[b.key].hidden) S.memB.set(b.id,{x:b.x,y:b.y,key:b.key,owner:b.owner});
   }
   for(const [id,m] of S.memB)
     if(S.vis[m.y*MAP+m.x]===2 && !S.buildings.some(b=>b.id===id)) S.memB.delete(id);
@@ -679,6 +728,15 @@ const ex=e=>e.key in B?e.x+.5:e.x;
 const ey=e=>e.key in B?e.y+.5:e.y;
 const dst=(a,b)=>Math.hypot(ex(a)-ex(b),ey(a)-ey(b));
 
+/* aircraft can only be engaged by things that can elevate; AA can only shoot up */
+function isAir(e){ return !(e.key in B) && U[e.key].air; }
+function canHit(src,tgt){
+  const air=isAir(tgt);
+  if(air) return !!src.aa;
+  return !src.aaOnly;
+}
+function wpn(e){ return e.key in B ? (B[e.key].wcls||"bunker") : (U[e.key].wcls||e.cls); }
+
 function applyDmg(cls,tgt,base){
   const tc = tgt.key in B ? "structure" : tgt.cls;
   tgt.hp -= base*((MTX[cls]||{})[tc] ?? 1);
@@ -687,7 +745,7 @@ function applyDmg(cls,tgt,base){
 function splash(x,y,owner,cls,base,rad){
   const kill=[];
   near(x,y,rad+1,u=>{
-    if(u.owner===owner||u.hp<=0) return;
+    if(u.owner===owner||u.hp<=0||U[u.key].air) return;   // bombs fall past aircraft
     const d=Math.hypot(u.x-x,u.y-y); if(d>rad) return;
     applyDmg(cls,u,base*(1-d/rad*.55));
     if(u.hp<=0) kill.push(u);
@@ -703,11 +761,11 @@ function splash(x,y,owner,cls,base,rad){
 function target(u,range){
   const d=U[u.key]; let best=null,bd=range;
   near(u.x,u.y,range+1,o=>{
-    if(o.owner===u.owner||o.hp<=0) return;
+    if(o.owner===u.owner||o.hp<=0||!canHit(d,o)) return;
     const dd=dst(u,o); if(dd<bd&&dd>=d.minR){bd=dd;best=o;}
   });
-  for(const b of S.buildings){
-    if(b.owner===u.owner||b.hp<=0) continue;
+  if(!d.aaOnly) for(const b of S.buildings){
+    if(b.owner===u.owner||b.hp<=0||B[b.key].hidden) continue;
     const dd=dst(u,b); if(dd<bd&&dd>=d.minR){bd=dd;best=b;}
   }
   return best;
@@ -757,10 +815,10 @@ function update(dt){
       b.cd-=dt;
       if(b.cd<=0){
         let best=null,bd=d.rng;
-        near(b.x+.5,b.y+.5,d.rng+1,o=>{ if(o.owner===b.owner||o.hp<=0)return;
+        near(b.x+.5,b.y+.5,d.rng+1,o=>{ if(o.owner===b.owner||o.hp<=0||!canHit(d,o))return;
           const dd=dst(b,o); if(dd<bd){bd=dd;best=o;} });
         if(best){
-          applyDmg("bunker",best,d.dmg);
+          applyDmg(wpn(b),best,d.dmg*mDmg(b.owner,"structure"));
           b.cd=d.rof;
           tracer(ex(b),ey(b),ex(best),ey(best),FCOL[b.owner]);
           if(best.hp<=0) killed(best);
@@ -817,7 +875,8 @@ function update(dt){
         if(!u.amove) u.path=null;
         if(u.cd<=0) fire(u,d,rng);
       } else if(dd>rng){
-        if(!u.path||u.repath<=0){
+        if(d.air){ u.path=[{x:ex(u.target)|0,y:ey(u.target)|0}]; }
+        else if(!u.path||u.repath<=0){
           const p=path(u.x,u.y,ex(u.target),ey(u.target));
           if(p){u.path=p;u.repath=1.3;} else u.target=null;
         }
@@ -848,10 +907,44 @@ function update(dt){
     });
     if(n){
       const nx=u.x+px*24*dt, ny=u.y+py*24*dt;
-      if(walk(nx|0,ny|0)){u.x=nx;u.y=ny;}
+      if(U[u.key].air||walk(nx|0,ny|0)){u.x=nx;u.y=ny;}
     }
     u.x=Math.max(.2,Math.min(MAP-.2,u.x)); u.y=Math.max(.2,Math.min(MAP-.2,u.y));
   }
+
+  /* ── minefields ── */
+  for(const b of S.buildings){
+    if(!B[b.key].mine||b.build>0||!b.armed) continue;
+    let hit=null;
+    near(b.x+.5,b.y+.5,1.1,u=>{
+      if(hit||u.owner===b.owner||u.hp<=0||U[u.key].air) return;
+      if(Math.hypot(u.x-b.x-.5,u.y-b.y-.5)<0.62) hit=u;
+    });
+    if(hit){
+      b.armed=0; b.hp=0;
+      const k=splash(b.x+.5,b.y+.5,b.owner,"at",95,1.25);
+      ringFx(b.x+.5,b.y+.5,1.4,"rgba(240,170,70,.9)");
+      puff(b.x+.5,b.y+.5,16,"#c8913f",1.5);
+      for(const z of k) killed(z);
+      if(b.owner===HUMAN) say("Minefield triggered.",1.8);
+    }
+  }
+
+  /* ── air raids called in from off the map ── */
+  for(const r of S.raids){
+    r.x+=r.vx*dt; r.y+=r.vy*dt; r.life-=dt;
+    if(!r.dropped && Math.hypot(r.x-r.tx,r.y-r.ty)<0.9){
+      r.dropped=1;
+      for(let i=0;i<4;i++){
+        const sx=(Math.random()-.5)*2.4, sy=(Math.random()-.5)*2.4;
+        S.shells.push({x:r.x,y:r.y,tx:r.tx+sx,ty:r.ty+sy,t:-i*.10,dur:.5,
+          dmg:70,rad:1.9,owner:r.owner});
+      }
+      sfxAt(r.tx,r.ty,"boom");
+    }
+    if(r.life<=0||r.x<-4||r.y<-4||r.x>MAP+4||r.y>MAP+4) r.dead=1;
+  }
+  if(S.raids.some(r=>r.dead)) S.raids=S.raids.filter(r=>!r.dead);
 
   /* ── shells in flight ── */
   for(const s of S.shells){
@@ -897,6 +990,7 @@ function update(dt){
     computeVision();
   }
   if(S.alertT>0) S.alertT-=dt;
+  if(S.strikeCd>0) S.strikeCd-=dt;
   S.sel=S.sel.filter(id=>S.units.some(u=>u.id===id));
   if(S.selB&&!S.buildings.some(b=>b.id===S.selB)) S.selB=null;
 }
@@ -917,7 +1011,7 @@ function fire(u,d,rng){
     puff(u.x+Math.cos(u.face)*.4,u.y+Math.sin(u.face)*.4,3,"#e0c48a",.7);
     sfxAt(u.x,u.y,"gun");
   } else {
-    applyDmg(d.cls,tg,d.dmg*mDmg(u.owner,d.cls));
+    applyDmg(wpn(u),tg,d.dmg*mDmg(u.owner,d.cls));
     tracer(u.x,u.y,ex(tg),ey(tg),FCOL[u.owner]);
     sfxAt(u.x,u.y,d.cls==="veh"?"gun":"shot");
     if(tg.hp<=0) killed(tg);
@@ -933,6 +1027,26 @@ function killed(e){
   S.kills[e.owner===HUMAN?AI:HUMAN]++;
   if(e.owner===HUMAN) raiseAlert(ex(e),ey(e));
 }
+const STRIKE_COST=190, STRIKE_CD=95;
+function canStrike(o){
+  return T(o,"airstrike") && S.buildings.some(b=>b.owner===o&&b.key==="airfield"&&b.build<=0);
+}
+function callStrike(x,y,o){
+  const p=S.players[o];
+  if(!canStrike(o)||S.strikeCd>0||p.sup<STRIKE_COST) return false;
+  p.sup-=STRIKE_COST; S.strikeCd=STRIKE_CD;
+  /* three aircraft run in from the nearest edge, drop, and carry on out */
+  const fromLeft=x<MAP/2;
+  for(let i=0;i<3;i++){
+    const sx=fromLeft?-3-i*1.6:MAP+3+i*1.6;
+    const sy=y+(i-1)*1.5;
+    const dx=(x-sx), dy=(y-sy), L=Math.hypot(dx,dy)||1;
+    S.raids.push({x:sx,y:sy,tx:x+(i-1)*1.2,ty:y,vx:dx/L*5.2,vy:dy/L*5.2,
+      owner:o,dropped:0,life:14});
+  }
+  return true;
+}
+
 function raiseAlert(x,y){
   if(S.alertT>0) return;
   S.alertT=9; S.alertAt={x,y}; sfx("alert");
@@ -964,9 +1078,10 @@ function aiTick(){
   }
 
   /* research: reserve supply, follow a doctrine order */
-  const order=["rations","motor","rifling","plating","conscript","guns","composite",
-               "atrifles","ballistic","howitzers","engines","bodyarm","supply",
-               "maingun","optics","tactics","rockets","radar"];
+  const order=["rations","fortify","motor","rifling","mortars","plating","conscript",
+               "guns","aviation","flak","composite","atrifles","atguns","fighters",
+               "ballistic","howitzers","bombers","engines","bodyarm","supply","maingun",
+               "mines","concrete","gunships","airstrike","optics","tactics","rockets","radar"];
   const wantTech = order.find(k=>techReady(me,k)==="ok");
   const needLabs = order.some(k=>techReady(me,k)==="labs");
   if(!p.res && wantTech && p.sup>=costT(wantTech,me)+50) startTech(wantTech,me);
@@ -1004,6 +1119,18 @@ function aiTick(){
     return;
   }
 
+  /* bombing runs on anything worth hitting that it can see */
+  if(canStrike(me)&&S.strikeCd<=0&&p.sup>STRIKE_COST+120){
+    let best=null,bs=0;
+    for(const b of S.buildings){
+      if(b.owner!==HUMAN||!aiSee(b.x,b.y)) continue;
+      let sc=b.key==="hq"?5:(b.key==="town"?4:B[b.key].makes?3:1);
+      near(b.x+.5,b.y+.5,2.2,u=>{ if(u.owner===HUMAN) sc+=0.6; });
+      if(sc>bs){bs=sc;best=b;}
+    }
+    if(best&&bs>=3) callStrike(best.x,best.y,me);
+  }
+
   /* attack */
   const wave=D.wave+Math.floor(S.t/85)*3;
   if(S.t>D.peace && A.length>=wave){
@@ -1022,37 +1149,56 @@ function aiTick(){
 /* what the AI wants more of, given what it is fielding and what it faces */
 function composition(me,A){
   const en=forces(me===AI?HUMAN:AI);
-  const enVeh=en.filter(u=>u.cls==="veh").length/Math.max(1,en.length);
+  const n=Math.max(1,en.length);
+  const enVeh=en.filter(u=>u.cls==="veh").length/n;
+  const enAir=en.filter(u=>U[u.key].air).length;
   const have=k=>A.filter(u=>u.key===k).length/Math.max(1,A.length);
   return {
-    rifle:    .30-have("rifle"),
-    assault:  .15-have("assault"),
-    atteam:   (.10+enVeh*.35)-have("atteam"),
-    scoutcar: .05-have("scoutcar"),
-    halftrk:  .10-have("halftrk"),
-    ltank:    .10-have("ltank"),
-    mtank:    .20-have("mtank"),
-    htank:    .15-have("htank"),
-    fieldgun: .12-have("fieldgun"),
-    howitzer: .10-have("howitzer"),
-    rocket:   .06-have("rocket"),
+    rifle:    .24-have("rifle"),
+    assault:  .13-have("assault"),
+    atteam:   (.09+enVeh*.34)-have("atteam"),
+    scoutcar: .04-have("scoutcar"),
+    halftrk:  .08-have("halftrk"),
+    ltank:    .08-have("ltank"),
+    mtank:    .17-have("mtank"),
+    htank:    .13-have("htank"),
+    td:       (.06+enVeh*.20)-have("td"),
+    aahalf:   (enAir?.10+Math.min(.22,enAir*.04):.01)-have("aahalf"),
+    mortar:   .08-have("mortar"),
+    fieldgun: .10-have("fieldgun"),
+    howitzer: .09-have("howitzer"),
+    rocket:   .05-have("rocket"),
+    spotter:  .02-have("spotter"),
+    fighter:  (enAir?.14:.05)-have("fighter"),
+    bomber:   .09-have("bomber"),
+    gunship:  .07-have("gunship"),
   };
 }
 /* what the AI wants to build next, in priority order */
 function nextBuild(me,needLabs){
   const nT=towns(me).length;
   const n=k=>S.buildings.filter(b=>b.owner===me&&b.key===k).length;
+  const foe=me===AI?HUMAN:AI;
+  const enemyAir=S.units.filter(u=>u.owner===foe&&U[u.key].air).length;
   if(n("depot")<Math.min(nT*3,6)) return "depot";
   if(!n("barracks")) return "barracks";
   if((needLabs||n("lab")<1)&&n("lab")<Math.min(3,nT+1)) return "lab";
+  /* an enemy with aircraft and no answer to them ends the game quickly */
+  if(enemyAir>0&&unlockedB("flak",me)&&n("flak")<Math.min(4,nT+1)) return "flak";
   if(unlockedB("motor",me)&&!n("motor")) return "motor";
   if(unlockedB("factory",me)&&!n("factory")) return "factory";
   if(unlockedB("artpark",me)&&!n("artpark")) return "artpark";
+  if(unlockedB("mgnest",me)&&n("mgnest")<nT) return "mgnest";
   if(n("barracks")<nT) return "barracks";
+  if(unlockedB("airfield",me)&&!n("airfield")&&nT>=3) return "airfield";
+  if(unlockedB("atgun",me)&&n("atgun")<nT) return "atgun";
+  if(unlockedB("flak",me)&&n("flak")<Math.max(1,nT-1)) return "flak";
   if(unlockedB("factory",me)&&n("factory")<2&&nT>=3) return "factory";
   if(nT>=2&&n("bunker")<nT) return "bunker";
+  if(unlockedB("mine",me)&&n("mine")<nT*2) return "mine";
   if(n("depot")<nT*5) return "depot";
   if(unlockedB("artpark",me)&&n("artpark")<2&&nT>=4) return "artpark";
+  if(unlockedB("airfield",me)&&n("airfield")<2&&nT>=5) return "airfield";
   return null;
 }
 function go(u,x,y){ const p=path(u.x,u.y,x,y); if(p) u.path=p; }
@@ -1134,40 +1280,34 @@ function hAt(x,y){
   x=Math.max(0,Math.min(MAP-1,x)); y=Math.max(0,Math.min(MAP-1,y));
   return S.H[y*MAP+x];
 }
-function buildTerrain(force){
-  /* one canvas pixel per world pixel is already upscaled 2x on a retina phone,
-     so render the sheet larger — but stay under the iOS canvas area ceiling */
-  TF=force||Math.max(1, Math.min(2, Math.floor((3400/(MAP*TILE))*2)/2));
-  terrain=document.createElement("canvas");
-  try{
-    terrain.width=Math.round(MAP*TILE*TF); terrain.height=Math.round(MAP*TILE*TF);
-    if(!terrain.width) throw 0;
-  }catch(e){ TF=1; terrain.width=MAP*TILE; terrain.height=MAP*TILE; }
-  const c=terrain.getContext("2d");
-  c.scale(TF,TF);
+/* The sheet is drawn by one routine so the cached bitmap and the live
+   high-zoom pass are pixel-identical. Zoomed in we redraw the visible tiles as
+   vectors at true device resolution instead of magnifying a raster. */
+function paintTerrain(c,x0,y0,x1,y1){
+  x0=Math.max(0,x0|0); y0=Math.max(0,y0|0);
+  x1=Math.min(MAP-1,x1|0); y1=Math.min(MAP-1,y1|0);
 
-  /* elevation bands */
-  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
     const i=y*MAP+x;
-    c.fillStyle=shade(TCOL[S.tiles[i]], (S.H[i]-.45)*.30);
+    c.fillStyle=shade(TCOL[S.tiles[i]],(S.H[i]-.45)*.30);
     c.fillRect(x*TILE,y*TILE,TILE+1,TILE+1);
   }
 
-  /* contour lines by marching squares on the height field */
-  c.lineWidth=1; c.lineCap="round";
+  c.lineCap="round";
   for(let lv=.34; lv<.80; lv+=.055){
-    const major = Math.abs(lv-.34)%.165 < .03;
-    c.strokeStyle = major?"rgba(86,70,44,.50)":CONTOUR;
-    c.lineWidth = major?1.4:0.9;
+    const major=Math.abs(lv-.34)%.165<.03;
+    c.strokeStyle=major?"rgba(86,70,44,.50)":CONTOUR;
+    c.lineWidth=major?1.4:0.9;
     c.beginPath();
-    for(let y=0;y<MAP-1;y++)for(let x=0;x<MAP-1;x++){
-      const a=hAt(x,y),b=hAt(x+1,y),d=hAt(x+1,y+1),e=hAt(x,y+1);
-      const idx=(a>lv?8:0)|(b>lv?4:0)|(d>lv?2:0)|(e>lv?1:0);
+    for(let y=Math.max(0,y0-1);y<=Math.min(MAP-2,y1);y++)
+    for(let x=Math.max(0,x0-1);x<=Math.min(MAP-2,x1);x++){
+      const A=hAt(x,y),Bv=hAt(x+1,y),D=hAt(x+1,y+1),E=hAt(x,y+1);
+      const idx=(A>lv?8:0)|(Bv>lv?4:0)|(D>lv?2:0)|(E>lv?1:0);
       if(idx===0||idx===15) continue;
       const X=x*TILE+TILE/2, Y=y*TILE+TILE/2;
       const it=(p,q)=>(lv-p)/((q-p)||1e-6);
-      const T_=[X+TILE*it(a,b),Y], R_=[X+TILE,Y+TILE*it(b,d)];
-      const Bm=[X+TILE*it(e,d),Y+TILE],  L_=[X,Y+TILE*it(a,e)];
+      const T_=[X+TILE*it(A,Bv),Y], R_=[X+TILE,Y+TILE*it(Bv,D)];
+      const Bm=[X+TILE*it(E,D),Y+TILE], L_=[X,Y+TILE*it(A,E)];
       const seg=(p,q)=>{c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);};
       switch(idx){
         case 1:case 14: seg(L_,Bm); break;
@@ -1183,14 +1323,12 @@ function buildTerrain(force){
     c.stroke();
   }
 
-  /* water: solid, with a hard shoreline */
-  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
     if(S.tiles[y*MAP+x]!==SEA) continue;
     c.fillStyle="#7d95a0"; c.fillRect(x*TILE,y*TILE,TILE+1,TILE+1);
   }
-  c.strokeStyle="rgba(40,55,64,.55)"; c.lineWidth=1.6;
-  c.beginPath();
-  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+  c.strokeStyle="rgba(40,55,64,.55)"; c.lineWidth=1.6; c.beginPath();
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
     if(S.tiles[y*MAP+x]!==SEA) continue;
     for(const [dx,dy] of [[1,0],[0,1],[-1,0],[0,-1]]) if(land(x+dx,y+dy)){
       if(dx){ c.moveTo((x+(dx>0?1:0))*TILE,y*TILE); c.lineTo((x+(dx>0?1:0))*TILE,(y+1)*TILE); }
@@ -1199,8 +1337,7 @@ function buildTerrain(force){
   }
   c.stroke();
 
-  /* woodland stipple, rocky hachures */
-  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
     const i=y*MAP+x, t=S.tiles[i], d=S.deco[i], px=x*TILE, py=y*TILE;
     if(t===WOOD){
       c.fillStyle="rgba(58,86,46,.55)";
@@ -1210,8 +1347,7 @@ function buildTerrain(force){
         c.beginPath(); c.arc(px+ox,py+oy,1.9,0,7); c.fill();
       }
     } else if(t===PEAK){
-      c.strokeStyle="rgba(80,66,44,.5)"; c.lineWidth=1;
-      c.beginPath();
+      c.strokeStyle="rgba(80,66,44,.5)"; c.lineWidth=1; c.beginPath();
       for(let k=0;k<4;k++){
         const ox=px+TILE*(.18+k*.2), oy=py+TILE*(.3+(d%3)*.12);
         c.moveTo(ox,oy); c.lineTo(ox+3,oy+7);
@@ -1220,23 +1356,31 @@ function buildTerrain(force){
     }
   }
 
-  /* survey grid + references */
-  c.strokeStyle=GRIDLINE; c.lineWidth=1;
-  c.beginPath();
-  for(let i=0;i<=MAP;i+=5){ c.moveTo(i*TILE,0); c.lineTo(i*TILE,MAP*TILE); c.moveTo(0,i*TILE); c.lineTo(MAP*TILE,i*TILE); }
+  c.strokeStyle=GRIDLINE; c.lineWidth=1; c.beginPath();
+  for(let i=Math.floor(x0/5)*5;i<=x1+5;i+=5){ c.moveTo(i*TILE,y0*TILE); c.lineTo(i*TILE,(y1+1)*TILE); }
+  for(let i=Math.floor(y0/5)*5;i<=y1+5;i+=5){ c.moveTo(x0*TILE,i*TILE); c.lineTo((x1+1)*TILE,i*TILE); }
   c.stroke();
   c.fillStyle="rgba(70,58,40,.42)"; c.font="9px ui-monospace,monospace"; c.textBaseline="top";
-  for(let gy=0;gy<MAP;gy+=5)for(let gx=0;gx<MAP;gx+=5)
+  for(let gy=Math.floor(y0/5)*5;gy<=y1;gy+=5)
+  for(let gx=Math.floor(x0/5)*5;gx<=x1;gx+=5)
     c.fillText(String(gx).padStart(2,"0")+String(gy).padStart(2,"0"), gx*TILE+3, gy*TILE+2);
+}
 
-  /* iOS hands back a blank canvas rather than throwing when it can't allocate,
-     so check a pixel actually landed and drop to the small sheet if not */
+function buildTerrain(force){
+  TF=force||Math.max(1, Math.min(2, Math.floor((3400/(MAP*TILE))*2)/2));
+  terrain=document.createElement("canvas");
+  try{
+    terrain.width=Math.round(MAP*TILE*TF); terrain.height=Math.round(MAP*TILE*TF);
+    if(!terrain.width) throw 0;
+  }catch(e){ TF=1; terrain.width=MAP*TILE; terrain.height=MAP*TILE; }
+  const c=terrain.getContext("2d");
+  c.scale(TF,TF);
+  paintTerrain(c,0,0,MAP-1,MAP-1);
+
   if(!force && TF>1){
     let ok=false;
-    try{
-      const q=Math.round(MAP*TILE*TF/2);
-      ok = c.getImageData(q,q,1,1).data[3] > 0;
-    }catch(e){ ok=true; }          // reading may be blocked, assume fine
+    try{ const q=Math.round(MAP*TILE*TF/2); ok=c.getImageData(q,q,1,1).data[3]>0; }
+    catch(e){ ok=true; }
     if(!ok) return buildTerrain(1);
   }
 
@@ -1245,6 +1389,7 @@ function buildTerrain(force){
   fogCtx=fog.getContext("2d");
   fogSeen=new Uint8Array(FW*FW);
 }
+
 /* Painted at FS texels per tile from the same circles vision uses, so the edge
    is round and its blur is a quarter tile instead of a whole one. One tile of
    padding stops the border texels stretching off the edge of the map. */
@@ -1286,7 +1431,15 @@ function draw(dt){
   ctx.fillStyle="#0a0d10"; ctx.fillRect(0,0,cw,ch);
   ctx.save(); ctx.scale(cam.z,cam.z); ctx.translate(-cam.x,-cam.y);
   const vw=cw/cam.z, vh=ch/cam.z;
-  ctx.drawImage(terrain,cam.x*TF,cam.y*TF,vw*TF,vh*TF,cam.x,cam.y,vw,vh);
+  if(cam.z>1.0){
+    ctx.save();
+    ctx.beginPath(); ctx.rect(cam.x,cam.y,vw,vh); ctx.clip();
+    ctx.fillStyle="#7d95a0"; ctx.fillRect(cam.x,cam.y,vw,vh);
+    paintTerrain(ctx, cam.x/TILE-1, cam.y/TILE-1, (cam.x+vw)/TILE+1, (cam.y+vh)/TILE+1);
+    ctx.restore();
+  } else {
+    ctx.drawImage(terrain,cam.x*TF,cam.y*TF,vw*TF,vh*TF,cam.x,cam.y,vw,vh);
+  }
 
   /* control zones */
   ctx.lineWidth=1.2/cam.z;
@@ -1354,6 +1507,15 @@ function draw(dt){
     ctx.beginPath(); ctx.ellipse(X,Y,2.6,1.3,0,0,7); ctx.fill();
     ctx.fillStyle="#2b241a";
     ctx.beginPath(); ctx.arc(X,Y-lift,2.2,0,7); ctx.fill();
+  }
+
+  /* incoming air raids */
+  for(const r of S.raids){
+    const a=Math.atan2(r.vy,r.vx);
+    ctx.save(); ctx.globalAlpha=.2; ctx.fillStyle="#12180f";
+    ctx.beginPath(); ctx.ellipse(r.x*TILE+16,r.y*TILE+19,10,6,a,0,7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(r.x*TILE,r.y*TILE); ctx.rotate(a);
+    drawPlane({key:"bomber"},PAL[r.owner]); ctx.restore();
   }
 
   /* fx */
@@ -1501,6 +1663,35 @@ function drawVehicle(u,P){
     ctx.fillStyle=P.dark; rr(-1,-3.0,6.5,6.0,1.2); ctx.fill();   // open bed
     ctx.save(); ctx.rotate(u.turret-u.face);
     ctx.fillStyle="#1a2029"; ctx.fillRect(2-u.recoil*2,-0.7,7,1.4); ctx.restore();
+  } else if(k==="aahalf"){
+    shadowBlob(8.6,5.2); wheels([-4.4],1.8,P);
+    ctx.fillStyle=P.trk; rr(0,-5.4,7,2.5,1); ctx.fill(); rr(0,2.9,7,2.5,1); ctx.fill();
+    hullPlate(15,8.2,P,1.5);
+    ctx.save(); ctx.rotate(u.turret-u.face);
+    ctx.fillStyle=P.dark; ctx.beginPath(); ctx.arc(0,0,3.4,0,7); ctx.fill();
+    const kick=-u.recoil*2.4;
+    ctx.save(); ctx.rotate(-0.35);                 // twin barrels, elevated
+    ctx.fillStyle=P.trk;
+    ctx.fillRect(1+kick,-2.2,10,1.5); ctx.fillRect(1+kick,0.7,10,1.5);
+    ctx.restore();
+    if(u.recoil>.5){ ctx.fillStyle="rgba(255,224,150,"+((u.recoil-.5)*2)+")";
+      ctx.beginPath(); ctx.arc(12,-0.6,3.2,0,7); ctx.fill(); }
+    ctx.restore();
+  } else if(k==="td"){
+    shadowBlob(9.5,5.4);
+    tracks(18,10.5,P);
+    hullPlate(17,9.4,P,2.4);
+    ctx.fillStyle=P.dark;                          // fixed casemate, no turret
+    ctx.beginPath();
+    ctx.moveTo(-3,-4.4); ctx.lineTo(6,-3.2); ctx.lineTo(6,3.2); ctx.lineTo(-3,4.4);
+    ctx.closePath(); ctx.fill();
+    const kick=-u.recoil*3.4;
+    ctx.fillStyle=P.trk; ctx.fillRect(5+kick,-1.5,15,3);
+    ctx.fillRect(19+kick,-2.3,2.6,4.6);
+    if(u.recoil>.55){ ctx.fillStyle="rgba(255,214,140,"+((u.recoil-.55)*2.1)+")";
+      const mx=21+kick;
+      ctx.beginPath(); ctx.moveTo(mx,0); ctx.lineTo(mx+8,-3.8); ctx.lineTo(mx+11,0);
+      ctx.lineTo(mx+8,3.8); ctx.closePath(); ctx.fill(); }
   } else {
     const spec={ltank:[16,9.5,3.5,8.5,1.9],mtank:[19,11,4.3,11,2.5],htank:[22,13,5.1,14,3.2]}[k];
     shadowBlob(spec[0]*.55,spec[1]*.42);
@@ -1522,6 +1713,16 @@ function drawGun(u,P){
     ctx.strokeStyle=P.light; ctx.lineWidth=.8; ctx.strokeRect(-1.4,-5.0,10.4,10.0);
     if(u.recoil>.5){ ctx.fillStyle="rgba(255,190,110,"+((u.recoil-.5)*1.6)+")";
       ctx.beginPath(); ctx.arc(9,0,5.5,0,7); ctx.fill(); }
+    ctx.restore();
+  } else if(k==="mortar"){
+    shadowBlob(5.4,3.8);
+    ctx.save(); ctx.rotate(u.turret-u.face);
+    ctx.strokeStyle=P.dark; ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(-1,0); ctx.lineTo(-5,-3.4); ctx.moveTo(-1,0); ctx.lineTo(-5,3.4); ctx.stroke();
+    ctx.fillStyle=P.dark;
+    ctx.save(); ctx.rotate(-0.5); ctx.fillRect(0,-1.3,10,2.6); ctx.restore();
+    ctx.fillStyle=P.hull; ctx.beginPath(); ctx.arc(-1,0,3,0,7); ctx.fill();
+    ctx.strokeStyle="rgba(10,14,18,.8)"; ctx.lineWidth=1; ctx.stroke();
     ctx.restore();
   } else {
     const big=k==="howitzer";
@@ -1545,6 +1746,44 @@ function drawGun(u,P){
       ctx.lineTo(mx+9,4.6); ctx.closePath(); ctx.fill();
     }
     ctx.restore();
+  }
+}
+
+/* aircraft: drawn lifted off the deck with a shadow on the ground below */
+function drawPlane(u,P){
+  const k=u.key, spin=blink*22;
+  if(k==="gunship"){
+    ctx.fillStyle=P.hull;
+    rr(-9,-4.6,20,9.2,4); ctx.fill();
+    ctx.strokeStyle="rgba(10,14,18,.85)"; ctx.lineWidth=1.1; ctx.stroke();
+    ctx.fillStyle=P.dark; rr(-16,-2.2,9,4.4,2); ctx.fill();       // tail boom
+    ctx.fillStyle=P.light; ctx.beginPath(); ctx.arc(6,0,3,0,7); ctx.fill();
+    ctx.strokeStyle="rgba(220,232,242,.45)"; ctx.lineWidth=2;      // rotor disc
+    ctx.beginPath(); ctx.arc(0,0,15,0,7); ctx.stroke();
+    ctx.strokeStyle="rgba(230,240,250,.8)"; ctx.lineWidth=1.6;
+    for(let i=0;i<2;i++){ const a=spin+i*Math.PI/2;
+      ctx.beginPath(); ctx.moveTo(-Math.cos(a)*15,-Math.sin(a)*15);
+      ctx.lineTo(Math.cos(a)*15,Math.sin(a)*15); ctx.stroke(); }
+    ctx.fillStyle=P.dark;
+    for(const sy of [-6,6]){ rr(-2,sy-1.2,9,2.4,1); ctx.fill(); }  // stub pylons
+  } else {
+    const big=k==="bomber", w=big?13:9, l=big?12:10;
+    ctx.fillStyle=P.dark;                                          // wings
+    ctx.beginPath();
+    ctx.moveTo(-1,-w); ctx.lineTo(4,-w*.85); ctx.lineTo(4,w*.85); ctx.lineTo(-1,w);
+    ctx.lineTo(-4,w*.5); ctx.lineTo(-4,-w*.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=P.hull;                                          // fuselage
+    ctx.beginPath();
+    ctx.moveTo(l+3,0); ctx.lineTo(2,-3.1); ctx.lineTo(-l,-2.6);
+    ctx.lineTo(-l-1.5,0); ctx.lineTo(-l,2.6); ctx.lineTo(2,3.1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="rgba(10,14,18,.85)"; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle=P.dark;                                          // tailplane
+    ctx.beginPath(); ctx.moveTo(-l+1,-4.6); ctx.lineTo(-l+4,0); ctx.lineTo(-l+1,4.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=P.light; ctx.beginPath(); ctx.ellipse(3.5,0,2.6,1.7,0,0,7); ctx.fill();
+    ctx.strokeStyle="rgba(220,232,242,.30)"; ctx.lineWidth=1.4;    // propeller blur
+    ctx.beginPath(); ctx.arc(l+3,0,4.4,0,7); ctx.stroke();
+    if(big){ ctx.fillStyle=P.dark;
+      for(const sy of [-6.5,6.5]){ rr(1,sy-1.6,6,3.2,1.4); ctx.fill(); } }
   }
 }
 
@@ -1572,11 +1811,19 @@ function drawU(u){
     return;
   }
 
-  ctx.save(); ctx.translate(X,Y); ctx.rotate(u.face);
-  if(d.cls==="inf"||d.cls==="at") drawInfantry(u,P);
-  else if(d.cls==="arty")         drawGun(u,P);
-  else                            drawVehicle(u,P);
-  ctx.restore();
+  if(d.air){
+    ctx.save();                                   // ground shadow, offset for altitude
+    ctx.globalAlpha=.22; ctx.fillStyle="#12180f";
+    ctx.beginPath(); ctx.ellipse(X+13,Y+15,9,5.5,u.face,0,7); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.translate(X,Y); ctx.rotate(u.face); drawPlane(u,P); ctx.restore();
+  } else {
+    ctx.save(); ctx.translate(X,Y); ctx.rotate(u.face);
+    if(d.cls==="inf"||d.cls==="at") drawInfantry(u,P);
+    else if(d.cls==="arty")         drawGun(u,P);
+    else                            drawVehicle(u,P);
+    ctx.restore();
+  }
 
   /* team chevron so sides read instantly even in a scrum */
   ctx.fillStyle=P.flag;
@@ -1686,6 +1933,41 @@ function drawB(b,ghost){
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle=P.trk; ctx.fillRect(-S_/2+2,-1.6,S_-4,3.2);   // embrasure
       ctx.fillStyle=P.light; ctx.beginPath(); ctx.arc(0,0,2.6,0,7); ctx.fill();
+      break;
+    case "mgnest":
+      ctx.beginPath(); ctx.arc(0,0,S_/2.4,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=P.trk; ctx.fillRect(-2,-S_/2.2,4,S_/2.2);
+      ctx.fillStyle=P.light; ctx.beginPath(); ctx.arc(0,1.5,2.2,0,7); ctx.fill();
+      break;
+    case "atgun":
+      rr(-S_/2,-S_/3,S_,S_/1.5,2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=P.trk; ctx.fillRect(-1.6,-S_/2-3,3.2,S_/2+3);
+      ctx.fillStyle=P.dark; ctx.beginPath(); ctx.arc(0,1,3.6,0,7); ctx.fill();
+      break;
+    case "flak":
+      ctx.beginPath(); ctx.arc(0,0,S_/2.3,0,7); ctx.fill(); ctx.stroke();
+      ctx.save(); ctx.rotate(blink*.8);
+      ctx.fillStyle=P.trk;
+      ctx.fillRect(-1.4,-S_/2-2,2.8,S_/2+2); ctx.fillRect(2.2,-S_/2-1,2.4,S_/2+1);
+      ctx.restore();
+      ctx.fillStyle=P.light; ctx.beginPath(); ctx.arc(0,0,2.6,0,7); ctx.fill();
+      break;
+    case "mine":
+      ctx.globalAlpha*=.55;
+      ctx.strokeStyle=P.light; ctx.lineWidth=1.2; ctx.setLineDash([2.5,2.5]);
+      ctx.strokeRect(-S_/2+2,-S_/2+2,S_-4,S_-4); ctx.setLineDash([]);
+      ctx.fillStyle=P.dark;
+      for(const [ox,oy] of [[-4,-4],[4,-4],[-4,4],[4,4],[0,0]]){
+        ctx.beginPath(); ctx.arc(ox,oy,1.8,0,7); ctx.fill(); }
+      break;
+    case "airfield":
+      rr(-S_/2,-S_/2,S_,S_,1.5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle=P.trk;                                   // runway
+      ctx.fillRect(-S_/2+1,-3.4,S_-2,6.8);
+      ctx.strokeStyle=P.light; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(-S_/2+3,0); ctx.lineTo(S_/2-3,0); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle=P.dark; rr(-S_/2+2,-S_/2+2,7,5,1); ctx.fill();   // hangar
       break;
     case "trench":
       ctx.strokeStyle=P.dark; ctx.lineWidth=5.5; ctx.lineCap="round";
@@ -1858,6 +2140,13 @@ function tap(sx,sy){
   if(S.over) return;
   const w=s2w(sx,sy), wx=w.x/TILE, wy=w.y/TILE, tx=wx|0, ty=wy|0;
 
+  if(S.striking){
+    S.striking=0;
+    if(!visT(tx,ty)){ say("You cannot see that ground.",2); sfx("nope"); return; }
+    if(callStrike(tx,ty,HUMAN)){ say("Strike inbound.",2.4); sfx("alert"); }
+    else { say("Strike unavailable.",1.8); sfx("nope"); }
+    return;
+  }
   if(S.placing){
     const k=S.placing, c=costB(k,HUMAN);
     if(!canPlace(k,HUMAN,tx,ty)){ say("Outside your control zone.",1.6); sfx("nope"); return; }
@@ -1948,7 +2237,11 @@ function ui(){
   /* ── contextual line and quick actions ── */
   const out=[]; const row={appendChild:b=>out.push(b)}; let text="";
 
-  if(S.placing){
+  if(S.striking){
+    text=`<s>Tap a target you can see — 3 bombers inbound</s>`;
+    row.appendChild(card("Cancel","",()=>{S.striking=0;},true,true));
+  }
+  else if(S.placing){
     text=`Siting <em>${B[S.placing].name}</em> — inside a town's control zone`;
     row.appendChild(card("Cancel","",()=>{S.placing=null;hover=null;},true,true));
   }
@@ -2015,8 +2308,19 @@ function drawSheet(){
 
   if(S.tab==="build"){
     const keys=Object.keys(B).filter(k=>k!=="hq"&&k!=="town");
+    if(canStrike(HUMAN)) sig+="strike"+(S.strikeCd>0?Math.ceil(S.strikeCd):0)+(p.sup>=STRIKE_COST?1:0);
     sig+=keys.map(k=>(unlockedB(k,HUMAN)?1:0)+(p.sup>=costB(k,HUMAN)?1:0)+costB(k,HUMAN)).join(",");
     if(sig===sheetSig) return;
+    if(canStrike(HUMAN)){
+      const rdy=S.strikeCd<=0&&p.sup>=STRIKE_COST;
+      html+=`<div class="shHead">DOCTRINE</div><div class="grid">`+
+        `<button class="item ${rdy?"":"off"}" data-s="1"><div class="n"><span>Air Strike</span></div>`+
+        `<div class="c">◇ ${STRIKE_COST} · 3 bombers</div>`+
+        (S.strikeCd>0?`<div class="w">Ready in ${Math.ceil(S.strikeCd)}s</div>`
+                     :p.sup<STRIKE_COST?`<div class="w">Short ${Math.ceil(STRIKE_COST-p.sup)}</div>`
+                     :`<div class="g">Tap anywhere you can see</div>`)+
+        `</button></div>`;
+    }
     html+=`<div class="shHead">INSTALLATIONS<div class="sp"></div>TOWNS COME FROM ENGINEERS</div><div class="grid">`;
     for(const k of keys){
       const d=B[k], c=costB(k,HUMAN), un=unlockedB(k,HUMAN), have=S.buildings.filter(b=>b.owner===HUMAN&&b.key===k).length;
@@ -2104,6 +2408,12 @@ function drawSheet(){
   sheetSig=sig;
   sh.innerHTML=html;
 
+  for(const n of sh.querySelectorAll("[data-s]")) n.addEventListener("click",()=>{
+    if(S.strikeCd>0){ say(`Air wing rearming, ${Math.ceil(S.strikeCd)}s.`,2); sfx("nope"); return; }
+    if(S.players[HUMAN].sup<STRIKE_COST){ say("Not enough supply.",1.8); sfx("nope"); return; }
+    S.striking=1; S.tab=null; S.sel=[]; S.selB=null; sfx("select");
+    say("Tap a target you can see.",3); ui();
+  });
   for(const n of sh.querySelectorAll("[data-b]")) n.addEventListener("click",()=>{
     const k=n.dataset.b;
     if(!unlockedB(k,HUMAN)){ say(`${B[k].name} needs ${TECH[B[k].req].name}.`,2.4); sfx("nope"); return; }
@@ -2152,7 +2462,7 @@ function card(n,sub,fn,on,hot){
 }
 
 /* ── research tree: a real graph, tiers as columns, prerequisites as edges ── */
-const NW=138, NH=76, COLW=196, ROWH=94, PADX=64, PADY=34;
+const NW=138, NH=80, COLW=196, ROWH=96, PADX=64, PADY=34;
 let treeLayout=null;
 
 function layoutTree(){
