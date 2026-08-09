@@ -182,6 +182,19 @@
     border-left:1px solid var(--line2);padding-left:12px}
   .brief b{color:var(--text);font-weight:600}
 
+  #pause{position:fixed;inset:0;z-index:19;display:none;place-items:center;
+    background:rgba(9,12,15,.92);padding:24px}
+  #pause.show{display:grid}
+  .pbox{width:100%;max-width:280px;text-align:center}
+  .pbox h1{font-size:15px;letter-spacing:.34em;margin:0 0 22px;font-weight:500;color:var(--dim)}
+  .pbtn{display:block;width:100%;margin-bottom:8px;background:var(--card);
+    border:1px solid var(--line);color:var(--text);font-family:var(--mono);
+    font-size:11px;letter-spacing:.16em;padding:14px;border-radius:2px}
+  .pbtn:active{border-color:var(--amber);color:var(--amber)}
+  .pnote{font-size:9px;color:var(--dim);letter-spacing:.08em;margin-top:14px;line-height:1.7}
+  #resume{display:none}
+  #resume.show{display:block}
+
   #end{position:fixed;inset:0;z-index:21;display:none;place-items:center;text-align:center;
     background:rgba(8,10,12,.95);padding:24px}
   #end.show{display:grid}
@@ -248,6 +261,9 @@
   </div>
 
   <button id="go">DEPLOY</button>
+  <button id="resume" style="width:100%;margin-top:8px;background:var(--card);
+    border:1px solid var(--amber);color:var(--amber);padding:14px;border-radius:2px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em">RESUME SAVED GAME</button>
 
   <div class="brief">
     <b>Objective.</b> Destroy the enemy headquarters.<br><br>
@@ -264,6 +280,14 @@
     hold a spot to attack-move.
   </div>
 </div>
+
+<div id="pause"><div class="pbox">
+  <h1>PAUSED</h1>
+  <button class="pbtn" id="pResume">RESUME</button>
+  <button class="pbtn" id="pSave">SAVE AND QUIT</button>
+  <button class="pbtn" id="pQuit">ABANDON</button>
+  <div class="pnote" id="pNote"></div>
+</div></div>
 
 <div id="end"><div><h1 id="endT"></h1><p id="endP"></p><button id="endB">RETURN TO BRIEFING</button></div></div>
 
@@ -430,6 +454,11 @@ const DIFF=[
 ];
 
 const AGGRO=5.2, SEP=0.66, RESEARCH_RATE=1.4;
+/* PACE scales the whole simulation clock: movement, combat, economy, research and
+   the AI all slow together, so nothing about the balance shifts, the game just
+   breathes. HPS makes fights last longer relative to manoeuvring; it is applied to
+   both sides equally so matchups are unchanged. */
+const PACE=0.84, HPS=1.18;
 
 /* ═══════════════════════════ NOISE ═══════════════════════════ */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
@@ -478,7 +507,7 @@ function newGame(){
       paused:false, over:null, speed:1,
       t:0, aiT:0, visT:0, alertT:0, alertAt:null,
       counts:[{},{}], lastTapId:0, lastTapT:0,
-      kills:[0,0] };
+      kills:[0,0], lost:[0,0], sites:null };
 
   rebuildBlocks();
   const [a,b]=pickStarts();
@@ -582,7 +611,7 @@ function techReady(o,k){
 /* ═══════════════════════════ ENTITIES ═══════════════════════════ */
 function mkB(key,o,x,y,instant){
   const d=B[key];
-  const mx=Math.round(d.hp*(d.def&&T(o,"concrete")?1.55:1));
+  const mx=Math.round(d.hp*(d.def&&T(o,"concrete")?1.55:1)*HPS);
   const b={id:nextId++,key,owner:o,x,y,hp:instant?mx:mx*.28,maxHp:mx,
     build:instant?0:d.time,buildT:d.time,queue:null,q:[],cd:0,rally:null,flash:0,smoke:0,armed:1};
   S.buildings.push(b);
@@ -595,12 +624,15 @@ function spawn(key,o,x,y,rally){
   for(let r=0;r<9;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
     if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
     if(!walk(x+dx,y+dy)) continue;
-    const hp=Math.round(d.hp*mHp(o,d.cls));
+    const hp=Math.round(d.hp*mHp(o,d.cls)*HPS);
     const u={id:nextId++,key,owner:o,cls:d.cls,x:x+dx+.5,y:y+dy+.5,hp,maxHp:hp,
       path:null,cd:0,target:null,amove:null,flash:0,face:0,repath:0,salvo:0,born:S.t,
       turret:0,recoil:0,step:0,dust:0};
     S.units.push(u);
-    if(rally){ const p=path(x+dx,y+dy,rally.x,rally.y); if(p) u.path=p; }
+    if(rally){
+      if(d.air) u.path=[{x:rally.x,y:rally.y}];
+      else { const p=path(x+dx,y+dy,rally.x,rally.y); if(p) u.path=p; }
+    }
     return u;
   }
   return null;
@@ -850,6 +882,15 @@ function update(dt){
     while(da<-Math.PI) da+=Math.PI*2;
     u.turret += da*Math.min(1,dt*5.5);
     if(u.recoil>0) u.recoil=Math.max(0,u.recoil-dt*3.6);
+    if(u.hp<u.maxHp*.34 && d.cls!=="inf" && d.cls!=="at"){
+      u.smk=(u.smk||0)-dt;
+      if(u.smk<=0){
+        u.smk=.42;
+        if(S.fx.length<210&&cam.z>.6&&onScreen(u))
+          S.fx.push({k:"p",x:u.x,y:u.y,vx:(Math.random()-.5)*.4,vy:-.5-Math.random()*.5,
+            life:.9,max:.9,col:"rgba(70,70,72,.62)"});
+      }
+    }
     if(u.path){
       u.step += dt*d.spd*2.4;
       if(d.cls==="veh"||d.cls==="recon"){
@@ -885,6 +926,28 @@ function update(dt){
         const nx=u.x+Math.cos(a)*d.spd*dt, ny=u.y+Math.sin(a)*d.spd*dt;
         if(walk(nx|0,ny|0)){u.x=nx;u.y=ny;}
         u.face=a+Math.PI;
+      }
+    }
+
+    /* an aircraft with nothing to do drifts home and circles, rather than
+       hovering over enemy flak until it is shot down */
+    if(d.air&&!u.path&&!u.target){
+      /* hold wherever it was last ordered; only drift home if it has no station */
+      const base = u.station || S.buildings.filter(b=>b.owner===u.owner&&b.hp>0&&
+        (b.key==="airfield"||b.key==="hq"||b.key==="town"))
+        .sort((a,b)=>dst(u,a)-dst(u,b))[0];
+      if(base){
+        const bx=base.x, by=base.y;
+        const dd=Math.hypot(u.x-bx-.5,u.y-by-.5);
+        if(dd>4.5){ u.path=[{x:bx,y:by}]; }
+        else{
+          u.orbit=(u.orbit||Math.random()*7)+dt*(1.5/Math.max(1.2,dd));
+          const r=2.6;
+          const tx2=bx+.5+Math.cos(u.orbit)*r, ty2=by+.5+Math.sin(u.orbit)*r;
+          const ax=tx2-u.x, ay=ty2-u.y, L=Math.hypot(ax,ay)||1;
+          const st2=Math.min(L, d.spd*mSpd(u.owner,d.cls)*dt);
+          u.x+=ax/L*st2; u.y+=ay/L*st2; u.face=Math.atan2(ay,ax);
+        }
       }
     }
 
@@ -1025,6 +1088,7 @@ function killed(e){
   puff(ex(e),ey(e), big?18:8, big?"#8a6a3a":FCOL[e.owner], big?1.5:1);
   if(big) ringFx(ex(e),ey(e),1.4,"rgba(200,120,60,.7)");
   S.kills[e.owner===HUMAN?AI:HUMAN]++;
+  S.lost[e.owner]++;
   if(e.owner===HUMAN) raiseAlert(ex(e),ey(e));
 }
 const STRIKE_COST=190, STRIKE_CD=95;
@@ -1462,6 +1526,41 @@ function draw(dt){
     ctx.globalAlpha=1;
   }
 
+  /* viable town sites for a selected engineer — the single most annoying
+     thing to work out by trial and error */
+  if(S.sel.length===1){
+    const eng=S.units.find(u=>u.id===S.sel[0]&&u.key==="engineer");
+    if(eng){
+      if(!S.sites||S.sites.id!==eng.id||S.t-S.sites.t>1.2){
+        const list=[];
+        for(let r=0;r<=9&&list.length<14;r++)
+        for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+          if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+          const x=(eng.x|0)+dx, y=(eng.y|0)+dy;
+          if(!canPlace("town",HUMAN,x,y)) continue;
+          let open=0;
+          for(let by=-2;by<=2;by++)for(let bx=-2;bx<=2;bx++) if(land(x+bx,y+by)) open++;
+          if(open>=17) list.push({x,y,open});
+        }
+        S.sites={id:eng.id,t:S.t,list};
+      }
+      const afford=S.players[HUMAN].sup>=costB("town",HUMAN);
+      for(const q of S.sites.list){
+        const here=(eng.x|0)===q.x&&(eng.y|0)===q.y;
+        ctx.strokeStyle=here?(afford?"rgba(111,191,115,.95)":"rgba(217,164,65,.8)")
+                            :"rgba(217,164,65,.34)";
+        ctx.lineWidth=(here?2:1.1)/cam.z;
+        ctx.setLineDash(here?[]:[3/cam.z,3/cam.z]);
+        ctx.strokeRect(q.x*TILE+3,q.y*TILE+3,TILE-6,TILE-6);
+        ctx.setLineDash([]);
+        if(here){
+          ctx.fillStyle=afford?"rgba(111,191,115,.16)":"rgba(217,164,65,.14)";
+          ctx.fillRect(q.x*TILE+3,q.y*TILE+3,TILE-6,TILE-6);
+        }
+      }
+    } else if(S.sites) S.sites=null;
+  } else if(S.sites) S.sites=null;
+
   /* placement ghost */
   if(S.placing&&hover){
     const ok=canPlace(S.placing,HUMAN,hover.x,hover.y)&&S.players[HUMAN].sup>=costB(S.placing,HUMAN);
@@ -1800,13 +1899,24 @@ function drawU(u){
 
   /* zoomed out, icons turn to mush — fall back to a readable blip */
   if(cam.z<0.62){
-    ctx.fillStyle=FCOL[u.owner];
-    const s=d.cls==="veh"?4.6:d.cls==="arty"?4.2:3.4;
-    ctx.beginPath();
-    if(d.cls==="veh") ctx.ellipse(X,Y,s*1.25,s*.85,u.face,0,7);
-    else ctx.arc(X,Y,s,0,7);
-    ctx.fill();
-    ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=.8; ctx.stroke();
+    if(d.air){                                   // a dart plus its shadow, unmistakable
+      ctx.globalAlpha=.25; ctx.fillStyle="#12180f";
+      ctx.beginPath(); ctx.ellipse(X+7,Y+8,4.4,2.6,u.face,0,7); ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.fillStyle=FCOL[u.owner];
+      ctx.save(); ctx.translate(X,Y); ctx.rotate(u.face);
+      ctx.beginPath(); ctx.moveTo(7,0); ctx.lineTo(-4,5); ctx.lineTo(-1.5,0);
+      ctx.lineTo(-4,-5); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=.8; ctx.stroke(); ctx.restore();
+    } else {
+      ctx.fillStyle=FCOL[u.owner];
+      const s=d.cls==="veh"?4.6:d.cls==="arty"?4.2:3.4;
+      ctx.beginPath();
+      if(d.cls==="veh") ctx.ellipse(X,Y,s*1.25,s*.85,u.face,0,7);
+      else ctx.arc(X,Y,s,0,7);
+      ctx.fill();
+      ctx.strokeStyle="rgba(0,0,0,.5)"; ctx.lineWidth=.8; ctx.stroke();
+    }
     if(u.hp<u.maxHp) hbar(X-8,Y-9,16,u.hp/u.maxHp);
     return;
   }
@@ -2054,8 +2164,26 @@ mm.addEventListener("pointerdown",e=>{
 /* ═══════════════════════════ SOUND ═══════════════════════════ */
 let AC=null, muted=false;
 function aInit(){ if(AC)return; try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){AC=null;} }
+function noiseBurst(dur,vol,freq,q){
+  if(!AC||muted) return;
+  const n=Math.floor(AC.sampleRate*dur);
+  const buf=AC.createBuffer(1,n,AC.sampleRate), ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++) ch[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.1);
+  const src=AC.createBufferSource(); src.buffer=buf;
+  const f=AC.createBiquadFilter(); f.type="lowpass";
+  f.frequency.setValueAtTime(freq,AC.currentTime);
+  f.frequency.exponentialRampToValueAtTime(Math.max(60,freq*0.28),AC.currentTime+dur);
+  f.Q.value=q||1;
+  const g=AC.createGain(); g.gain.setValueAtTime(vol,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(.0006,AC.currentTime+dur);
+  src.connect(f); f.connect(g); g.connect(AC.destination);
+  src.start(); src.stop(AC.currentTime+dur+.02);
+}
 function sfx(kind,vol){
   if(!AC||muted) return;
+  if(kind==="boom"){ noiseBurst(.42,.16*(vol??1),900,0.8); return; }
+  if(kind==="gun"){  noiseBurst(.13,.11*(vol??1),1600,1.1); return; }
+  if(kind==="shot"){ noiseBurst(.05,.07*(vol??1),3200,1.4); return; }
   const P={select:[560,700,.05,.05,"square"], order:[320,440,.07,.05,"square"],
     build:[190,300,.15,.05,"triangle"], done:[460,720,.16,.055,"triangle"],
     tech:[520,880,.4,.05,"triangle"], shot:[170,95,.05,.025,"square"],
@@ -2192,7 +2320,8 @@ function order(tx,ty,wx,wy,am){
     u.target=en||null; u.amove=am?{x:tx,y:ty}:null; u.repath=1.2;
     const o=ring(i++);
     const gx=Math.max(0,Math.min(MAP-1,tx+o.x)), gy=Math.max(0,Math.min(MAP-1,ty+o.y));
-    const p=path(u.x,u.y,gx,gy); if(p) u.path=p;
+    if(U[u.key].air){ u.path=[{x:gx,y:gy}]; u.station={x:gx,y:gy}; }
+    else { const p=path(u.x,u.y,gx,gy); if(p) u.path=p; }
   }
   sfx("order");
 }
@@ -2267,7 +2396,8 @@ function ui(){
         }, ok&&p.sup>=c, ok&&p.sup>=c));
       }
       row.appendChild(card("Hold","",()=>{
-        for(const id of S.sel){const v=S.units.find(z=>z.id===id); if(v){v.path=null;v.target=null;v.amove=null;}}
+        for(const id of S.sel){const v=S.units.find(z=>z.id===id);
+          if(v){v.path=null;v.target=null;v.amove=null;v.station=null;}}
         S.sel=[];
       },true));
     }
@@ -2393,15 +2523,24 @@ function drawSheet(){
     html+=`<div class="shHead">YOUR FORCES · ${mine.length} UNITS<div class="sp"></div>TAP TO SELECT</div><div class="grid">`;
     html+=`<button class="item" data-f="*"><div class="n"><span>All combat</span><i>${forces(HUMAN).filter(u=>u.key!=="engineer").length}</i></div><div class="c">Everything that shoots</div></button>`;
     html+=`<button class="item" data-f="!"><div class="n"><span>Idle</span></div><div class="c">No orders right now</div></button>`;
-    for(const k of Object.keys(U)){
-      const list=by[k]; if(!list) continue;
-      const hurt=list.filter(u=>u.hp<u.maxHp*.5).length;
-      html+=`<button class="item" data-f="${k}"><div class="n"><span>${U[k].name}</span><i>${list.length}</i></div>`+
-        `<div class="c">${CLASS_NAME[U[k].cls]}</div>`+
-        (hurt?`<div class="w">${hurt} damaged</div>`:"")+`</button>`;
+    const air=mine.filter(u=>U[u.key].air).length;
+    if(air) html+=`<button class="item" data-f="~"><div class="n"><span>All aircraft</span><i>${air}</i></div><div class="c">Everything airborne</div></button>`;
+    html+="</div>";
+    const GROUPS=[["INFANTRY",["inf","at"]],["VEHICLES",["veh"]],["ARTILLERY",["arty"]],
+                  ["AIR",["air"]],["SUPPORT",["recon","aa"]]];
+    for(const [label,classes] of GROUPS){
+      const keys=Object.keys(U).filter(k=>by[k]&&classes.includes(U[k].cls));
+      if(!keys.length) continue;
+      html+=`<div class="shHead">${label}</div><div class="grid">`;
+      for(const k of keys){
+        const list=by[k], hurt=list.filter(u=>u.hp<u.maxHp*.5).length;
+        html+=`<button class="item" data-f="${k}"><div class="n"><span>${U[k].name}</span><i>${list.length}</i></div>`+
+          `<div class="c">${CLASS_NAME[U[k].cls]}</div>`+
+          (hurt?`<div class="w">${hurt} damaged</div>`:"")+`</button>`;
+      }
+      html+="</div>";
     }
     if(!mine.length) html+=`<div class="empty">No units.</div>`;
-    html+="</div>";
   }
 
   if(sig===sheetSig) return;
@@ -2442,6 +2581,7 @@ function drawSheet(){
   for(const n of sh.querySelectorAll("[data-f]")) n.addEventListener("click",()=>{
     const k=n.dataset.f;
     if(k==="*") S.sel=forces(HUMAN).filter(u=>u.key!=="engineer").map(u=>u.id);
+    else if(k==="~") S.sel=S.units.filter(u=>u.owner===HUMAN&&U[u.key].air).map(u=>u.id);
     else if(k==="!") S.sel=S.units.filter(u=>u.owner===HUMAN&&!u.path&&!u.target).map(u=>u.id);
     else S.sel=S.units.filter(u=>u.owner===HUMAN&&u.key===k).map(u=>u.id);
     S.selB=null;
@@ -2563,10 +2703,132 @@ function unlockList(k){
   return b.concat(u).join(", ");
 }
 
+/* ═══════════════════ SAVE AND RESUME ═══════════════════
+   Uses whatever persistence the host offers and simply does nothing if there is
+   none, so the game is never broken by a storage failure. */
+const SAVE_KEY="fieldcommand_save_v1";
+let saveOK=true;
+async function storeSet(k,v){
+  try{
+    if(window.storage&&window.storage.set){ await window.storage.set(k,v); return true; }
+    window.localStorage.setItem(k,v); return true;
+  }catch(e){ saveOK=false; return false; }
+}
+async function storeGet(k){
+  try{
+    if(window.storage&&window.storage.get){ const r=await window.storage.get(k); return r?r.value:null; }
+    return window.localStorage.getItem(k);
+  }catch(e){ saveOK=false; return null; }
+}
+async function storeDel(k){
+  try{
+    if(window.storage&&window.storage.delete){ await window.storage.delete(k); return; }
+    window.localStorage.removeItem(k);
+  }catch(e){}
+}
+
+function snapshot(){
+  return JSON.stringify({
+    v:1, map:MAP, diff:difficulty, t:S.t, nextId,
+    tiles:Array.from(S.tiles), deco:Array.from(S.deco),
+    H:Array.from(S.H, x=>Math.round(x*1000)/1000),
+    vis:Array.from(S.vis),
+    counts:S.counts, kills:S.kills, lost:S.lost,
+    grally:S.grally, strikeCd:S.strikeCd,
+    players:S.players.map(p=>({sup:p.sup,men:p.men,menCap:p.menCap,tech:p.tech,res:p.res})),
+    units:S.units.map(u=>[u.id,u.key,u.owner,+u.x.toFixed(2),+u.y.toFixed(2),
+      Math.round(u.hp),u.maxHp,+u.face.toFixed(2),u.station||0]),
+    builds:S.buildings.map(b=>[b.id,b.key,b.owner,b.x,b.y,Math.round(b.hp),b.maxHp,
+      +b.build.toFixed(1),b.buildT,
+      b.queue?[b.queue.key,+b.queue.left.toFixed(1),b.queue.total]:0,
+      b.q.map(q=>[q.key,q.total]), b.rally||0, b.armed?1:0]),
+  });
+}
+
+function restore(d){
+  MAP=d.map; difficulty=d.diff; nextId=d.nextId||1;
+  S={ H:Float32Array.from(d.H), tiles:Uint8Array.from(d.tiles), deco:Uint8Array.from(d.deco),
+      vis:Uint8Array.from(d.vis), aiVis:new Uint8Array(d.map*d.map), memB:new Map(),
+      units:[], buildings:[], fx:[], shells:[], wrecks:[], raids:[], strikeCd:d.strikeCd||0,
+      players:d.players.map(p=>({sup:p.sup,men:p.men,menCap:p.menCap,tech:p.tech||{},res:p.res||null})),
+      sel:[], selB:null, placing:null, rally:false, grally:d.grally||null, tab:null, striking:0,
+      paused:false, over:null, speed:1,
+      t:d.t, aiT:0, visT:0, alertT:0, alertAt:null,
+      counts:d.counts, lastTapId:0, lastTapT:0,
+      kills:d.kills||[0,0], lost:d.lost||[0,0], sites:null };
+
+  for(const [id,key,owner,x,y,hp,maxHp,face,station] of d.units){
+    const u={id,key,owner,cls:U[key].cls,x,y,hp,maxHp,path:null,cd:0,target:null,amove:null,
+      flash:0,face,repath:0,salvo:0,born:0,turret:face,recoil:0,step:0,dust:0,
+      station:station||null};
+    S.units.push(u);
+  }
+  for(const [id,key,owner,x,y,hp,maxHp,build,buildT,q,queued,rally,armed] of d.builds){
+    const b={id,key,owner,x,y,hp,maxHp,build,buildT,cd:0,flash:0,smoke:0,
+      rally:rally||null, armed:armed?1:0,
+      queue:q?{key:q[0],left:q[1],total:q[2]}:null,
+      q:(queued||[]).map(z=>({key:z[0],left:z[1],total:z[1]}))};
+    S.buildings.push(b);
+  }
+  rebuildBlocks(); buildTerrain();
+  for(let i=0;i<S.vis.length;i++) if(S.vis[i]===2) S.vis[i]=1;
+  /* rebuild the explored mask at fog resolution from the tile-level record */
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    if(!S.vis[y*MAP+x]) continue;
+    for(let sy=0;sy<FS;sy++)for(let sx=0;sx<FS;sx++)
+      fogSeen[((y+1)*FS+sy)*FW+((x+1)*FS+sx)]=1;
+  }
+  computeVision();
+  mmT=null; rowSig=""; sheetSig=""; treeSig=""; treeProg=-1;
+  const h=hq(HUMAN)||S.buildings.find(b=>b.owner===HUMAN);
+  if(h) centreOn(h.x,h.y);
+}
+
+let saving=false;
+async function saveGame(){
+  if(saving||!S||S.over) return false;
+  saving=true;
+  const ok=await storeSet(SAVE_KEY,snapshot());
+  saving=false;
+  return ok;
+}
+async function haveSave(){ return !!(await storeGet(SAVE_KEY)); }
+async function loadGame(){
+  const raw=await storeGet(SAVE_KEY);
+  if(!raw) return false;
+  try{ restore(JSON.parse(raw)); return true; }
+  catch(e){ await storeDel(SAVE_KEY); return false; }
+}
+/* iOS kills backgrounded tabs without warning, so save on the way out */
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) saveGame(); });
+addEventListener("pagehide",()=>{ saveGame(); });
+
 /* ═══════════════════════════ CHROME ═══════════════════════════ */
 el("bSpeed").addEventListener("click",()=>{ S.speed=S.speed===1?2:S.speed===2?3:1; el("bSpeed").textContent=S.speed+"×"; });
 el("bSound").addEventListener("click",()=>{ muted=!muted; el("bSound").textContent=muted?"✕":"♪"; });
-el("bMenu").addEventListener("click",()=>{ S.paused=!S.paused; el("bMenu").textContent=S.paused?"▶":"❙❙"; say(S.paused?"Paused":"",S.paused?9999:.1); });
+function setPaused(v){
+  S.paused=v;
+  el("bMenu").textContent=v?"▶":"❙❙";
+  el("pause").classList.toggle("show",v);
+  if(v){ el("pNote").textContent = saveOK
+    ? "Progress also saves automatically when you leave the app."
+    : "This browser is blocking storage, so saving is unavailable."; }
+}
+el("bMenu").addEventListener("click",()=>setPaused(!S.paused));
+el("pResume").addEventListener("click",()=>setPaused(false));
+el("pSave").addEventListener("click",async()=>{
+  const ok=await saveGame();
+  if(!ok){ el("pNote").textContent="Could not save — this browser is blocking storage."; return; }
+  setPaused(false);
+  el("resume").classList.add("show");
+  el("start").classList.add("show");
+});
+el("pQuit").addEventListener("click",async()=>{
+  await storeDel(SAVE_KEY);
+  setPaused(false);
+  el("resume").classList.remove("show");
+  el("start").classList.add("show");
+});
 el("bTree").addEventListener("click",openTree);
 for(const b of document.querySelectorAll("#tabs button")) b.addEventListener("click",()=>{
   const t=b.dataset.t;
@@ -2584,20 +2846,53 @@ for(const b of document.querySelectorAll("#sizeOpt button")) b.addEventListener(
   document.querySelectorAll("#sizeOpt button").forEach(x=>x.classList.remove("on"));
   b.classList.add("on"); MAP=+b.dataset.s; });
 
-el("go").addEventListener("click",()=>{
+el("go").addEventListener("click",async()=>{
   aInit(); mmT=null; newGame(); ui();
+  await storeDel(SAVE_KEY);
+  el("resume").classList.remove("show");
   el("start").classList.remove("show"); el("end").classList.remove("show");
 });
+el("resume").addEventListener("click",async()=>{
+  aInit();
+  if(await loadGame()){
+    ui();
+    el("start").classList.remove("show"); el("end").classList.remove("show");
+    say("Game resumed.",2.4);
+  } else {
+    el("resume").classList.remove("show");
+    say("That save could not be read.",3);
+  }
+});
+/* offer resume only if there is genuinely something to resume */
+haveSave().then(v=>{ if(v) el("resume").classList.add("show"); });
+/* quiet autosave while playing */
+setInterval(()=>{ if(S&&!S.over&&!S.paused) saveGame(); },45000);
 el("endB").addEventListener("click",()=>{ el("end").classList.remove("show"); el("start").classList.add("show"); });
 
 function endGame(r){
   S.over=r;
+  storeDel(SAVE_KEY);
+  el("resume").classList.remove("show");
   const m=Math.floor(S.t/60), s=Math.floor(S.t%60);
   el("endT").textContent=r==="win"?"OBJECTIVE SECURED":"COMMAND OVERRUN";
   const techN=Object.keys(S.players[HUMAN].tech).length;
-  el("endP").textContent = r==="win"
-    ? `Enemy HQ destroyed in ${m}m ${s}s on ${DIFF[difficulty].name}. ${towns(HUMAN).length} towns held, ${techN} technologies researched, ${S.kills[HUMAN]} kills.`
-    : `HQ lost after ${m}m ${s}s. You held ${towns(HUMAN).length} towns to their ${towns(AI).length} and researched ${techN} to their ${Object.keys(S.players[AI].tech).length}.`;
+  const rows=[
+    ["Time", `${m}m ${s}s`],
+    ["Difficulty", DIFF[difficulty].name],
+    ["Towns", `${towns(HUMAN).length} v ${towns(AI).length}`],
+    ["Technologies", `${techN} v ${Object.keys(S.players[AI].tech).length}`],
+    ["Kills", `${S.kills[HUMAN]} v ${S.kills[AI]}`],
+    ["Losses", `${S.lost[HUMAN]} v ${S.lost[AI]}`],
+  ];
+  const lead = r==="win" ? "Enemy headquarters destroyed."
+    : (towns(HUMAN).length < towns(AI).length
+        ? "They out-expanded you. More towns is more of everything."
+        : techN < Object.keys(S.players[AI].tech).length
+          ? "They out-researched you. Labs win games you cannot win with numbers."
+          : "Your headquarters fell.");
+  el("endP").innerHTML = lead + "<br><br>" +
+    rows.map(([a,b])=>`<span style="display:flex;justify-content:space-between;gap:18px">`+
+      `<span>${a}</span><b style="color:#dde5ec;font-weight:400">${b}</b></span>`).join("");
   el("end").classList.add("show");
 }
 
@@ -2608,7 +2903,7 @@ function loop(now){
   const dt=Math.min(.05,(now-last)/1000); last=now;
   sndBudget=0;
   const steps=S.paused?0:S.speed;
-  for(let i=0;i<steps;i++) update(dt);
+  for(let i=0;i<steps;i++) update(dt*PACE);
   camStep(dt);
   if(msgT>0) msgT-=dt;
   draw(dt);
