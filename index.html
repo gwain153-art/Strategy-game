@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>FIELD COMMAND</title>
+<style>
+  :root{
+    --ink:#101418; --panel:#161c22; --card:#1c242c; --line:#2b353f; --line2:#3a4653;
+    --dim:#78889a; --text:#dde5ec; --amber:#d9a441; --blue:#3f7ad1; --red:#c14038;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--ink);color:var(--text);
+    font-family:var(--mono);user-select:none;-webkit-user-select:none;touch-action:none}
+  canvas{display:block}
+  #game{position:fixed;inset:0}
+
+  /* ─────────── top strip ─────────── */
+  #top{position:fixed;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;gap:2px;
+    height:40px;padding:0 6px;padding-top:env(safe-area-inset-top);
+    background:linear-gradient(180deg,rgba(16,20,24,.97),rgba(16,20,24,.55));
+    border-bottom:1px solid var(--line)}
+  .res{display:flex;align-items:baseline;gap:4px;padding:0 7px;font-size:12px}
+  .res i{color:var(--dim);font-size:9px;font-style:normal;letter-spacing:.12em}
+  .res b{font-variant-numeric:tabular-nums;font-weight:600}
+  .res b.low{color:var(--red)}
+  .res b.up{color:var(--amber)}
+  #top .sp{flex:1}
+  .tb{background:none;border:1px solid var(--line);color:var(--dim);font-family:var(--mono);
+    font-size:10px;padding:5px 7px;border-radius:2px;letter-spacing:.1em;margin-left:3px}
+  .tb:active,.tb.on{background:var(--line);color:var(--text)}
+
+  /* ─────────── side widgets ─────────── */
+  #mmWrap{position:fixed;right:7px;top:calc(47px + env(safe-area-inset-top));z-index:5;
+    width:108px;height:108px;border:1px solid var(--line2);background:#0b0e11;overflow:hidden}
+  #mm{width:108px;height:108px}
+  #mmLbl{position:absolute;left:3px;top:1px;font-size:8px;color:rgba(255,255,255,.45);letter-spacing:.16em}
+
+  #status{position:fixed;left:8px;top:calc(47px + env(safe-area-inset-top));z-index:5;
+    font-size:9px;letter-spacing:.1em;color:var(--dim);line-height:1.75}
+  #status b{color:var(--text);font-weight:400}
+  #resBar{width:104px;height:2px;background:var(--line);margin-top:2px}
+  #resFill{height:2px;background:var(--amber);width:0}
+
+  #alert{position:fixed;left:50%;transform:translateX(-50%);z-index:8;
+    top:calc(48px + env(safe-area-inset-top));background:rgba(193,64,56,.94);color:#fff;
+    border:0;font-family:var(--mono);font-size:10px;letter-spacing:.14em;padding:7px 13px;display:none}
+  #alert.show{display:block;animation:bl 1.1s infinite}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.55}}
+  @media(prefers-reduced-motion:reduce){#alert.show{animation:none}}
+
+  /* ─────────── command panel ─────────── */
+  #cmd{position:fixed;left:0;right:0;bottom:0;z-index:6;
+    background:linear-gradient(0deg,rgba(16,20,24,.985),rgba(16,20,24,.72));
+    border-top:1px solid var(--line);padding:6px 7px calc(6px + env(safe-area-inset-bottom))}
+  #ctx{font-size:9.5px;letter-spacing:.09em;color:var(--dim);text-transform:uppercase;
+    min-height:12px;margin:0 2px 6px;display:flex;gap:10px;align-items:center}
+  #ctx em{color:var(--text);font-style:normal}
+  #ctx s{color:var(--amber);text-decoration:none}
+  #ctx u{color:var(--red);text-decoration:none}
+  #row{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px}
+  #row::-webkit-scrollbar{display:none}
+  .card{flex:0 0 auto;min-width:80px;background:var(--card);border:1px solid var(--line);
+    padding:6px 8px 7px;text-align:left;color:var(--text);font-family:var(--mono);
+    position:relative;overflow:hidden;border-radius:2px}
+  .card:active{border-color:var(--amber)}
+  .card.off{opacity:.3}
+  .card.hot{border-color:var(--amber);background:#251f12}
+  .card .n{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  .card .c{font-size:8.5px;color:var(--dim);margin-top:3px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .card .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--amber)}
+
+  /* ─────────── tech tree ─────────── */
+  #tree{position:fixed;inset:0;z-index:14;display:none;background:#0c1013;
+    padding-top:calc(42px + env(safe-area-inset-top));overflow:auto}
+  #tree.show{display:block}
+  #treeHead{position:fixed;top:0;left:0;right:0;height:42px;padding:0 10px;
+    padding-top:env(safe-area-inset-top);display:flex;align-items:center;gap:10px;
+    background:#0c1013;border-bottom:1px solid var(--line);z-index:2}
+  #treeHead h2{font-size:11px;letter-spacing:.24em;margin:0;font-weight:500;flex:1}
+  #treeHead span{font-size:10px;color:var(--dim);letter-spacing:.08em}
+  .branch{padding:14px 10px 4px}
+  .branch h3{font-size:9px;letter-spacing:.24em;color:var(--dim);margin:0 0 8px;font-weight:400}
+  .nodes{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+  .nodes::-webkit-scrollbar{display:none}
+  .node{flex:0 0 auto;width:132px;background:var(--card);border:1px solid var(--line);
+    padding:8px;border-radius:2px;text-align:left;color:var(--text);font-family:var(--mono);
+    position:relative}
+  .node .t{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase}
+  .node .d{font-size:8.5px;color:var(--dim);margin-top:4px;line-height:1.5}
+  .node .m{font-size:8.5px;margin-top:6px;letter-spacing:.06em}
+  .node.can{border-color:var(--amber)}
+  .node.can .m{color:var(--amber)}
+  .node.done{border-color:#3f6b45;opacity:.72}
+  .node.done .m{color:#6fbf73}
+  .node.lock{opacity:.42}
+  .node.lock .m{color:var(--red)}
+  .node .bar{position:absolute;left:0;bottom:0;height:2px;background:var(--amber)}
+
+  /* ─────────── screens ─────────── */
+  .screen{position:fixed;inset:0;z-index:20;display:none;background:#0b0e11;overflow-y:auto;
+    padding:26px 20px calc(26px + env(safe-area-inset-bottom))}
+  .screen.show{display:block}
+  .screen h1{font-size:21px;letter-spacing:.32em;margin:5vh 0 2px;font-weight:600}
+  .screen h2{font-size:9.5px;letter-spacing:.2em;color:var(--dim);margin:0 0 26px;font-weight:400}
+  .screen h3{font-size:9px;letter-spacing:.22em;color:var(--dim);margin:20px 0 7px;
+    font-weight:400;text-transform:uppercase}
+  .opt{display:flex;gap:5px}
+  .opt button{flex:1;background:var(--card);border:1px solid var(--line);color:var(--text);
+    font-family:var(--mono);font-size:10px;letter-spacing:.1em;padding:11px 4px;border-radius:2px}
+  .opt button.on{border-color:var(--amber);color:var(--amber)}
+  #go{width:100%;margin-top:28px;background:var(--amber);color:#101418;border:0;padding:15px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.22em;font-weight:700;border-radius:2px}
+  .brief{font-size:10.5px;color:var(--dim);line-height:1.9;letter-spacing:.03em;margin-top:24px;
+    border-left:1px solid var(--line2);padding-left:12px}
+  .brief b{color:var(--text);font-weight:600}
+
+  #end{position:fixed;inset:0;z-index:21;display:none;place-items:center;text-align:center;
+    background:rgba(8,10,12,.95);padding:24px}
+  #end.show{display:grid}
+  #end h1{font-size:24px;letter-spacing:.3em;margin:0 0 10px;font-weight:600}
+  #end p{color:var(--dim);font-size:10.5px;line-height:1.9;margin:0 0 24px;max-width:300px}
+  #end button{background:var(--amber);color:#101418;border:0;padding:13px 28px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;font-weight:700;border-radius:2px}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="top">
+  <div class="res"><i>SUP</i><b id="rMoney">0</b></div>
+  <div class="res"><i>MAN</i><b id="rMen">0</b></div>
+  <div class="res"><i>STR</i><b id="rArmy">0</b></div>
+  <div class="sp"></div>
+  <button class="tb" id="bTree">TECH</button>
+  <button class="tb" id="bSpeed">1×</button>
+  <button class="tb" id="bSound">♪</button>
+  <button class="tb" id="bMenu">❙❙</button>
+</div>
+
+<div id="status"><span id="statLine"></span><div id="resBar"><div id="resFill"></div></div></div>
+<div id="mmWrap"><canvas id="mm" width="216" height="216"></canvas><div id="mmLbl">SECTOR</div></div>
+<button id="alert">▲ CONTACT — TAP TO VIEW</button>
+
+<div id="cmd"><div id="ctx"></div><div id="row"></div></div>
+
+<div id="tree">
+  <div id="treeHead"><h2>RESEARCH</h2><span id="treeLabs"></span><button class="tb" id="bTreeX">CLOSE</button></div>
+  <div id="treeBody"></div>
+</div>
+
+<div class="screen show" id="start">
+  <h1>FIELD COMMAND</h1>
+  <h2>REAL-TIME STRATEGY · SINGLE PLAYER</h2>
+
+  <h3>Opposing force</h3>
+  <div class="opt" id="diffOpt">
+    <button data-d="0">CADET</button><button data-d="1" class="on">REGULAR</button>
+    <button data-d="2">VETERAN</button><button data-d="3">GENERAL</button>
+  </div>
+
+  <h3>Theatre size</h3>
+  <div class="opt" id="sizeOpt">
+    <button data-s="40">SMALL</button><button data-s="56" class="on">MEDIUM</button>
+    <button data-s="72">LARGE</button>
+  </div>
+
+  <button id="go">DEPLOY</button>
+
+  <div class="brief">
+    <b>Objective.</b> Destroy the enemy headquarters.<br><br>
+    <b>Expand.</b> Engineers found towns. Manpower is capped by how many towns you
+    hold, so a single-town force hits a ceiling it can never break.<br><br>
+    <b>Research.</b> Vehicles do not exist until you unlock them. Research needs
+    Research Labs, and higher tiers need more labs. Armour needs a Motor Pool,
+    then a Tank Factory. Guns need an Artillery Park.<br><br>
+    <b>Combine arms.</b> Anti-tank teams gut vehicles and melt to infantry.
+    Tanks flatten infantry and get outranged by guns. Artillery hits hard and
+    cannot fire at anything in its face.<br><br>
+    <b>Controls.</b> Drag to pan, pinch to zoom, tap the minimap to jump.
+    Tap a unit to select it, tap again for every unit of that type on screen,
+    hold a spot to attack-move.
+  </div>
+</div>
+
+<div id="end"><div><h1 id="endT"></h1><p id="endP"></p><button id="endB">RETURN TO BRIEFING</button></div></div>
+
+<script>
+"use strict";
+
+/* ═══════════════════════════ CONSTANTS ═══════════════════════════ */
+const TILE=30;
+let MAP=56, difficulty=1;
+
+const SEA=0, SHORE=1, FLAT=2, FIELD=3, WOOD=4, RIDGE=5, PEAK=6;
+const LAND=[false,true,true,true,true,true,false];
+
+/* topographic palette: pale survey paper, elevation lightens */
+const TCOL=["#7d95a0","#c9bb98","#cfc7a6","#c6c09c","#a8b48a","#cbc0a0","#b9ae94"];
+const CONTOUR="rgba(96,80,54,.34)";
+const GRIDLINE="rgba(70,60,42,.14)";
+
+const HUMAN=0, AI=1;
+const FCOL=["#2f5fa8","#a8322b"];          // NATO blue / red
+const FFILL=["rgba(47,95,168,.90)","rgba(168,50,43,.90)"];
+
+/* ── damage matrix: attacker class → target class ── */
+const MTX={
+  inf:    {inf:1.00, at:1.20, veh:0.50, arty:1.50, recon:1.20, structure:0.55},
+  at:     {inf:0.60, at:0.80, veh:2.60, arty:1.20, recon:1.60, structure:0.70},
+  veh:    {inf:1.40, at:1.50, veh:1.00, arty:1.80, recon:1.50, structure:0.90},
+  arty:   {inf:1.50, at:1.50, veh:0.80, arty:1.00, recon:0.90, structure:2.50},
+  recon:  {inf:0.60, at:0.60, veh:0.40, arty:0.80, recon:1.00, structure:0.30},
+  bunker: {inf:1.20, at:1.20, veh:0.90, arty:1.10, recon:1.40, structure:1.00},
+};
+const CLASS_NAME={inf:"infantry",at:"anti-tank",veh:"vehicles",arty:"artillery",
+  recon:"recon",structure:"structures"};
+
+/* ── units ── */
+const U={
+  engineer:{name:"Engineer", sym:"E",   cls:"inf",  hp:70, cost:85, men:5,  time:9,
+            spd:1.6, dmg:0,  rng:0,   minR:0,  rof:0,   vis:6},
+  rifle:   {name:"Riflemen", sym:"X",   cls:"inf",  hp:125,cost:35, men:10, time:6,
+            spd:1.7, dmg:12, rng:1.7, minR:0,  rof:0.9, vis:5},
+  assault: {name:"Assault",  sym:"XA",  cls:"inf",  hp:200,cost:58, men:12, time:8,
+            spd:1.6, dmg:21, rng:1.3, minR:0,  rof:1.0, vis:5, req:"tactics"},
+  atteam:  {name:"AT Team",  sym:"XT",  cls:"at",   hp:95, cost:48, men:8,  time:7,
+            spd:1.5, dmg:27, rng:2.3, minR:0,  rof:1.6, vis:5, req:"atrifles"},
+  scoutcar:{name:"Scout Car",sym:"/",   cls:"recon",hp:85, cost:42, men:4,  time:5,
+            spd:3.2, dmg:8,  rng:1.5, minR:0,  rof:0.8, vis:10,req:"motor"},
+  halftrk: {name:"Halftrack",sym:"O",   cls:"veh",  hp:210,cost:78, men:10, time:9,
+            spd:2.6, dmg:18, rng:1.6, minR:0,  rof:0.9, vis:7, req:"motor"},
+  ltank:   {name:"Lt Tank",  sym:"O1",  cls:"veh",  hp:320,cost:125,men:12, time:12,
+            spd:2.3, dmg:31, rng:2.0, minR:0,  rof:1.2, vis:7, req:"plating"},
+  mtank:   {name:"Med Tank", sym:"O2",  cls:"veh",  hp:500,cost:195,men:16, time:16,
+            spd:1.9, dmg:50, rng:2.3, minR:0,  rof:1.3, vis:7, req:"composite"},
+  htank:   {name:"Hvy Tank", sym:"O3",  cls:"veh",  hp:820,cost:310,men:22, time:22,
+            spd:1.4, dmg:78, rng:2.6, minR:0,  rof:1.7, vis:7, req:"maingun"},
+  fieldgun:{name:"Field Gun",sym:"•",   cls:"arty", hp:85, cost:98, men:8,  time:13,
+            spd:0.95,dmg:46, rng:5.2, minR:1.8,rof:3.0, vis:7, shell:1, splash:0.7, req:"guns"},
+  howitzer:{name:"Howitzer", sym:"••",  cls:"arty", hp:110,cost:165,men:10, time:18,
+            spd:0.80,dmg:62, rng:7.0, minR:2.6,rof:4.2, vis:8, shell:1, splash:1.7, req:"howitzers"},
+  rocket:  {name:"Rockets",  sym:"•↑",  cls:"arty", hp:120,cost:250,men:14, time:22,
+            spd:0.90,dmg:40, rng:8.6, minR:3.2,rof:7.0, vis:8, shell:1, splash:2.6, salvo:5, req:"rockets"},
+};
+
+/* ── buildings ── */
+const B={
+  hq:      {name:"HQ",          sym:"★", hp:1400,cost:0,  time:0, sup:2.6,men:.42,rad:7,vis:11, makes:["engineer"]},
+  town:    {name:"Town",        sym:"◉", hp:620, cost:140,time:0, sup:1.8,men:.32,rad:7,vis:9, ramp:1.20, makes:["engineer"]},
+  depot:   {name:"Depot",       sym:"≡", hp:130, cost:50, time:6, sup:1.40,men:0, vis:4, ramp:1.10},
+  barracks:{name:"Barracks",    sym:"▮", hp:240, cost:100,time:10,sup:0,  men:0, vis:5, ramp:1.24,
+            makes:["rifle","assault","atteam"]},
+  lab:     {name:"Research Lab",sym:"⌗", hp:200, cost:125,time:13,sup:0,  men:0, vis:5, ramp:1.30},
+  motor:   {name:"Motor Pool",  sym:"⊕", hp:280, cost:160,time:13,sup:0,  men:0, vis:5, ramp:1.24,
+            req:"motor", makes:["scoutcar","halftrk"]},
+  factory: {name:"Tank Factory",sym:"⊞", hp:360, cost:245,time:18,sup:0,  men:0, vis:5, ramp:1.28,
+            req:"plating", makes:["ltank","mtank","htank"]},
+  artpark: {name:"Artillery Pk",sym:"◎", hp:260, cost:175,time:15,sup:0,  men:0, vis:6, ramp:1.26,
+            req:"guns", makes:["fieldgun","howitzer","rocket"]},
+  radar:   {name:"Radar Post",  sym:"◇", hp:180, cost:130,time:10,sup:0,  men:0, vis:17,ramp:1.20, req:"radar"},
+  bunker:  {name:"Bunker",      sym:"▲", hp:340, cost:85, time:8, sup:0,  men:0, vis:7, ramp:1.10,
+            dmg:19, rng:3.6, rof:1.15},
+  trench:  {name:"Trench",      sym:"", hp:420, cost:22, time:3, sup:0,  men:0, vis:2, blocks:true},
+};
+
+/* ── research tree ── */
+const TECH={
+  rations:  {name:"Field Rations", br:"LOGISTICS", tier:1, cost:110, time:26, d:"Supply income +30%"},
+  conscript:{name:"Conscription",  br:"LOGISTICS", tier:1, cost:130, time:28, d:"Manpower cap +40%"},
+  supply:   {name:"Supply Lines",  br:"LOGISTICS", tier:2, cost:220, time:38, d:"All costs −20%", pre:["rations"]},
+
+  rifling:  {name:"Rifling",       br:"INFANTRY",  tier:1, cost:120, time:28, d:"Infantry damage +25%"},
+  tactics:  {name:"Squad Tactics", br:"INFANTRY",  tier:2, cost:190, time:34, d:"Unlocks Assault infantry", pre:["rifling"]},
+  bodyarm:  {name:"Body Armour",   br:"INFANTRY",  tier:2, cost:200, time:36, d:"Infantry HP +30%", pre:["rifling"]},
+  atrifles: {name:"AT Rifles",     br:"INFANTRY",  tier:2, cost:210, time:36, d:"Unlocks AT Teams", pre:["rifling"]},
+
+  motor:    {name:"Motorisation",  br:"ARMOUR",    tier:1, cost:170, time:34, d:"Unlocks Motor Pool, Scout Car, Halftrack"},
+  engines:  {name:"Engines",       br:"ARMOUR",    tier:2, cost:230, time:36, d:"Vehicle speed +25%", pre:["motor"]},
+  plating:  {name:"Armour Plate",  br:"ARMOUR",    tier:2, cost:280, time:44, d:"Unlocks Tank Factory, Light Tank", pre:["motor"]},
+  composite:{name:"Composite",     br:"ARMOUR",    tier:3, cost:360, time:52, d:"Vehicle HP +30%. Unlocks Medium Tank", pre:["plating"]},
+  maingun:  {name:"Main Gun",      br:"ARMOUR",    tier:3, cost:420, time:58, d:"Vehicle damage +25%. Unlocks Heavy Tank", pre:["composite"]},
+
+  guns:     {name:"Field Guns",    br:"ARTILLERY", tier:1, cost:150, time:30, d:"Unlocks Artillery Park, Field Gun"},
+  ballistic:{name:"Ballistics",    br:"ARTILLERY", tier:2, cost:240, time:38, d:"Artillery range +20%", pre:["guns"]},
+  howitzers:{name:"Howitzers",     br:"ARTILLERY", tier:2, cost:300, time:46, d:"Unlocks Howitzer. Heavy splash", pre:["guns"]},
+  rockets:  {name:"Rocket Btty",   br:"ARTILLERY", tier:3, cost:430, time:58, d:"Unlocks Rocket Battery", pre:["howitzers"]},
+
+  optics:   {name:"Optics",        br:"RECON",     tier:1, cost:100, time:24, d:"All vision +30%"},
+  radar:    {name:"Radar",         br:"RECON",     tier:2, cost:220, time:36, d:"Unlocks Radar Post", pre:["optics"]},
+};
+const BRANCHES=["LOGISTICS","INFANTRY","ARMOUR","ARTILLERY","RECON"];
+const TKEYS=Object.keys(TECH);
+
+const DIFF=[
+  {name:"Cadet",   econ:0.70, wave:14, peace:390, react:1.5, tech:0.6},
+  {name:"Regular", econ:0.85, wave:12, peace:310, react:1.0, tech:1.0},
+  {name:"Veteran", econ:1.18, wave:10, peace:245, react:0.8, tech:1.3},
+  {name:"General", econ:1.50, wave:8,  peace:180, react:0.6, tech:1.7},
+];
+
+const AGGRO=5.2, SEP=0.66, RESEARCH_RATE=1.4;
+
+/* ═══════════════════════════ NOISE ═══════════════════════════ */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function noise(w,h,sc,rng){
+  const gw=Math.ceil(w/sc)+2,gh=Math.ceil(h/sc)+2,g=new Float32Array(gw*gh);
+  for(let i=0;i<g.length;i++)g[i]=rng();
+  const o=new Float32Array(w*h),sm=t=>t*t*(3-2*t);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const fx=x/sc,fy=y/sc,x0=fx|0,y0=fy|0,tx=sm(fx-x0),ty=sm(fy-y0);
+    const a=g[y0*gw+x0],b=g[y0*gw+x0+1],c=g[(y0+1)*gw+x0],d=g[(y0+1)*gw+x0+1];
+    o[y*w+x]=(a+(b-a)*tx)*(1-ty)+(c+(d-c)*tx)*ty;
+  }
+  return o;
+}
+
+/* ═══════════════════════════ STATE ═══════════════════════════ */
+let S=null, nextId=1;
+
+function newGame(){
+  const rng=mulberry32((Math.random()*1e9)|0);
+  const n1=noise(MAP,MAP,16,rng), n2=noise(MAP,MAP,7,rng), n3=noise(MAP,MAP,3,rng), nw=noise(MAP,MAP,5,rng);
+  const H=new Float32Array(MAP*MAP), tiles=new Uint8Array(MAP*MAP), deco=new Uint8Array(MAP*MAP);
+
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    const i=y*MAP+x;
+    let e=n1[i]*.56+n2[i]*.32+n3[i]*.12;
+    const dx=(x/(MAP-1))*2-1, dy=(y/(MAP-1))*2-1;
+    e-=Math.max(0,Math.sqrt(dx*dx+dy*dy)-.62)*1.5;
+    H[i]=e;
+    let t;
+    if(e<.30)      t=SEA;
+    else if(e<.335)t=SHORE;
+    else if(e<.44) t=FLAT;
+    else if(e<.55) t=(nw[i]>.60?WOOD:FIELD);
+    else if(e<.66) t=(nw[i]>.66?WOOD:RIDGE);
+    else           t=PEAK;
+    tiles[i]=t; deco[i]=(rng()*256)|0;
+  }
+
+  S={ H,tiles,deco,
+      vis:new Uint8Array(MAP*MAP), aiVis:new Uint8Array(MAP*MAP), memB:new Map(),
+      units:[], buildings:[], fx:[], shells:[], wrecks:[],
+      players:[mkP(),mkP()],
+      sel:[], selB:null, placing:null, rally:false,
+      paused:false, over:null, speed:1,
+      t:0, aiT:0, visT:0, alertT:0, alertAt:null,
+      counts:[{},{}], lastTapId:0, lastTapT:0,
+      kills:[0,0] };
+
+  rebuildBlocks();
+  const [a,b]=pickStarts();
+  mkB("hq",HUMAN,a.x,a.y,true);
+  mkB("hq",AI,b.x,b.y,true);
+  for(const [o,s] of [[HUMAN,a],[AI,b]]){
+    spawn("engineer",o,s.x,s.y); spawn("rifle",o,s.x,s.y);
+    spawn("rifle",o,s.x,s.y);    spawn("rifle",o,s.x,s.y);
+  }
+  buildTerrain(); computeVision(); centreOn(a.x,a.y);
+  rowSig=""; treeSig="";
+}
+function mkP(){ return {sup:300, men:28, menCap:88, tech:{}, res:null}; }
+
+function pickStarts(){
+  const good=[];
+  for(let y=3;y<MAP-3;y++)for(let x=3;x<MAP-3;x++){
+    const t=S.tiles[y*MAP+x];
+    if(t!==FLAT&&t!==FIELD) continue;
+    let open=0;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++) if(LAND[S.tiles[(y+dy)*MAP+(x+dx)]]) open++;
+    if(open>=21) good.push({x,y});
+  }
+  if(good.length<2) return [{x:4,y:4},{x:MAP-5,y:MAP-5}];
+  let best=null,bd=-1;
+  for(let i=0;i<500;i++){
+    const p=good[(Math.random()*good.length)|0], q=good[(Math.random()*good.length)|0];
+    const d=(p.x-q.x)**2+(p.y-q.y)**2;
+    if(d>bd&&path(p.x,p.y,q.x,q.y)) {bd=d;best=[p,q];}
+  }
+  return best||[good[0],good[good.length-1]];
+}
+
+/* ═══════════════════════════ PATHING ═══════════════════════════ */
+const NB=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+let blk=null;
+function rebuildBlocks(){
+  blk=new Uint8Array(MAP*MAP);
+  for(let i=0;i<MAP*MAP;i++) blk[i]=LAND[S.tiles[i]]?0:1;
+  for(const b of S.buildings) if(B[b.key].blocks&&b.hp>0) blk[b.y*MAP+b.x]=1;
+}
+function walk(x,y){ if(x<0||y<0||x>=MAP||y>=MAP) return false; return !blk[y*MAP+x]; }
+function land(x,y){ if(x<0||y<0||x>=MAP||y>=MAP) return false; return LAND[S.tiles[y*MAP+x]]; }
+
+function path(sx,sy,gx,gy){
+  sx|=0;sy|=0;gx|=0;gy|=0;
+  if(!walk(sx,sy)) return null;
+  const st=sy*MAP+sx, gl=gy*MAP+gx;
+  const prev=new Int32Array(MAP*MAP).fill(-1), seen=new Uint8Array(MAP*MAP);
+  const q=new Int32Array(MAP*MAP); let h=0,t=0; q[t++]=st; seen[st]=1;
+  let bn=st,bd=Infinity,found=false;
+  while(h<t){
+    const c=q[h++];
+    if(c===gl){found=true;break;}
+    const cx=c%MAP, cy=(c/MAP)|0, d=(cx-gx)**2+(cy-gy)**2;
+    if(d<bd){bd=d;bn=c;}
+    for(let k=0;k<8;k++){
+      const nx=cx+NB[k][0], ny=cy+NB[k][1];
+      if(!walk(nx,ny)) continue;
+      if(NB[k][0]&&NB[k][1]&&(!walk(cx+NB[k][0],cy)||!walk(cx,cy+NB[k][1]))) continue;
+      const ni=ny*MAP+nx; if(seen[ni]) continue;
+      seen[ni]=1; prev[ni]=c; q[t++]=ni;
+    }
+  }
+  let n=found?gl:bn; if(n===st) return null;
+  const p=[]; while(n!==st&&n!==-1){ p.push({x:n%MAP,y:(n/MAP)|0}); n=prev[n]; }
+  p.reverse(); return p.length?p:null;
+}
+
+/* ═══════════════════════════ TECH EFFECTS ═══════════════════════════ */
+const T=(o,k)=>!!S.players[o].tech[k];
+const mSup   = o=>T(o,"rations")?1.30:1;
+const mMen   = o=>T(o,"conscript")?1.40:1;
+const mCost  = o=>T(o,"supply")?0.80:1;
+const mVis   = o=>T(o,"optics")?1.30:1;
+const mEcon  = o=>o===AI?DIFF[difficulty].econ:1;
+function mDmg(o,cls){
+  let m=1;
+  if(cls==="inf"&&T(o,"rifling")) m*=1.25;
+  if(cls==="veh"&&T(o,"maingun")) m*=1.25;
+  return m;
+}
+function mHp(o,cls){
+  let m=1;
+  if(cls==="inf"&&T(o,"bodyarm")) m*=1.30;
+  if(cls==="veh"&&T(o,"composite")) m*=1.30;
+  return m;
+}
+function mSpd(o,cls){ return (cls==="veh"||cls==="recon")&&T(o,"engines")?1.25:1; }
+function mRng(o,cls){ return cls==="arty"&&T(o,"ballistic")?1.20:1; }
+
+const labs = o => S.buildings.filter(b=>b.owner===o&&b.key==="lab"&&b.build<=0).length;
+function techReady(o,k){
+  const t=TECH[k], p=S.players[o];
+  if(p.tech[k]) return "done";
+  if(labs(o)<t.tier) return "labs";
+  if(t.pre&&t.pre.some(x=>!p.tech[x])) return "pre";
+  return "ok";
+}
+
+/* ═══════════════════════════ ENTITIES ═══════════════════════════ */
+function mkB(key,o,x,y,instant){
+  const d=B[key];
+  const b={id:nextId++,key,owner:o,x,y,hp:instant?d.hp:d.hp*.28,maxHp:d.hp,
+    build:instant?0:d.time,buildT:d.time,queue:null,cd:0,rally:null,flash:0,smoke:0};
+  S.buildings.push(b);
+  S.counts[o][key]=(S.counts[o][key]||0)+1;
+  if(d.blocks) rebuildBlocks();
+  return b;
+}
+function spawn(key,o,x,y,rally){
+  const d=U[key];
+  for(let r=0;r<9;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dy))!==r) continue;
+    if(!walk(x+dx,y+dy)) continue;
+    const hp=Math.round(d.hp*mHp(o,d.cls));
+    const u={id:nextId++,key,owner:o,cls:d.cls,x:x+dx+.5,y:y+dy+.5,hp,maxHp:hp,
+      path:null,cd:0,target:null,amove:null,flash:0,face:0,repath:0,salvo:0,born:S.t};
+    S.units.push(u);
+    if(rally){ const p=path(x+dx,y+dy,rally.x,rally.y); if(p) u.path=p; }
+    return u;
+  }
+  return null;
+}
+
+function costB(k,o){ const d=B[k]; let c=d.cost; if(d.ramp)c*=Math.pow(d.ramp,S.counts[o][k]||0); return Math.round(c*mCost(o)); }
+function costU(k,o){ return Math.round(U[k].cost*mCost(o)); }
+function costT(k,o){ return Math.round(TECH[k].cost*mCost(o)); }
+
+const towns  = o=>S.buildings.filter(b=>b.owner===o&&(b.key==="town"||b.key==="hq"));
+const forces = o=>S.units.filter(u=>u.owner===o&&U[u.key].dmg>0);
+const hq     = o=>S.buildings.find(b=>b.owner===o&&b.key==="hq");
+const bAt    = (x,y)=>S.buildings.find(b=>b.x===x&&b.y===y&&b.hp>0);
+
+function inRad(o,x,y){
+  for(const c of towns(o)){ if(c.build>0) continue;
+    if(Math.max(Math.abs(c.x-x),Math.abs(c.y-y))<=B[c.key].rad) return true; }
+  return false;
+}
+function canPlace(k,o,x,y){
+  if(!land(x,y)||bAt(x,y)) return false;
+  if(k==="town"){
+    for(const c of towns(HUMAN).concat(towns(AI)))
+      if(Math.max(Math.abs(c.x-x),Math.abs(c.y-y))<6) return false;
+    return true;
+  }
+  return inRad(o,x,y);
+}
+function unlockedB(k,o){ const r=B[k].req; return !r||T(o,r); }
+function unlockedU(k,o){ const r=U[k].req; return !r||T(o,r); }
+
+function queueU(b,k,o){
+  const d=U[k], p=S.players[o], c=costU(k,o);
+  if(!unlockedU(k,o)||p.sup<c||p.men<d.men) return false;
+  p.sup-=c; p.men-=d.men; b.queue={key:k,left:d.time,total:d.time}; return true;
+}
+function startTech(k,o){
+  const p=S.players[o];
+  if(p.res||techReady(o,k)!=="ok") return false;
+  const c=costT(k,o); if(p.sup<c) return false;
+  const speed=RESEARCH_RATE*(1+0.22*(labs(o)-TECH[k].tier));
+  const t=TECH[k].time/Math.max(1,speed);
+  p.sup-=c; p.res={key:k,left:t,total:t};
+  return true;
+}
+
+/* ═══════════════════════════ VISION ═══════════════════════════ */
+function computeVision(){
+  mark(S.vis,HUMAN); mark(S.aiVis,AI);
+  for(const b of S.buildings){
+    if(b.owner===HUMAN) continue;
+    if(S.vis[b.y*MAP+b.x]===2) S.memB.set(b.id,{x:b.x,y:b.y,key:b.key,owner:b.owner});
+  }
+  for(const [id,m] of S.memB)
+    if(S.vis[m.y*MAP+m.x]===2 && !S.buildings.some(b=>b.id===id)) S.memB.delete(id);
+  paintFog();
+}
+function mark(a,o){
+  for(let i=0;i<a.length;i++) if(a[i]===2) a[i]=1;
+  const add=(cx,cy,r)=>{
+    const r2=r*r;
+    const x0=Math.max(0,(cx-r)|0), x1=Math.min(MAP-1,Math.ceil(cx+r));
+    const y0=Math.max(0,(cy-r)|0), y1=Math.min(MAP-1,Math.ceil(cy+r));
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+      const dx=x+.5-cx, dy=y+.5-cy;
+      if(dx*dx+dy*dy<=r2) a[y*MAP+x]=2;
+    }
+  };
+  const v=mVis(o);
+  for(const u of S.units) if(u.owner===o) add(u.x,u.y,U[u.key].vis*v);
+  for(const b of S.buildings) if(b.owner===o&&b.hp>0) add(b.x+.5,b.y+.5,B[b.key].vis*v);
+}
+const seenT=(x,y)=>S.vis[((y|0)*MAP+(x|0))]>0;
+const visT =(x,y)=>S.vis[((y|0)*MAP+(x|0))]===2;
+const aiSee=(x,y)=>S.aiVis[((y|0)*MAP+(x|0))]===2;
+
+/* ═══════════════════════════ SPATIAL GRID ═══════════════════════════ */
+const CELL=4; let grid=null, gw=0;
+function regrid(){
+  gw=Math.ceil(MAP/CELL); grid=new Array(gw*gw).fill(null);
+  for(const u of S.units){
+    const gi=((u.y/CELL)|0)*gw+((u.x/CELL)|0);
+    if(gi<0||gi>=grid.length) continue;
+    (grid[gi]||(grid[gi]=[])).push(u);
+  }
+}
+function near(x,y,r,fn){
+  const a=Math.max(0,((x-r)/CELL)|0), b=Math.min(gw-1,((x+r)/CELL)|0);
+  const c=Math.max(0,((y-r)/CELL)|0), d=Math.min(gw-1,((y+r)/CELL)|0);
+  for(let gy=c;gy<=d;gy++)for(let gx=a;gx<=b;gx++){
+    const cell=grid[gy*gw+gx]; if(cell) for(const u of cell) fn(u);
+  }
+}
+
+/* ═══════════════════════════ COMBAT ═══════════════════════════ */
+const ex=e=>e.key in B?e.x+.5:e.x;
+const ey=e=>e.key in B?e.y+.5:e.y;
+const dst=(a,b)=>Math.hypot(ex(a)-ex(b),ey(a)-ey(b));
+
+function applyDmg(cls,tgt,base){
+  const tc = tgt.key in B ? "structure" : tgt.cls;
+  tgt.hp -= base*((MTX[cls]||{})[tc] ?? 1);
+  tgt.flash=.12;
+}
+function splash(x,y,owner,cls,base,rad){
+  const kill=[];
+  near(x,y,rad+1,u=>{
+    if(u.owner===owner||u.hp<=0) return;
+    const d=Math.hypot(u.x-x,u.y-y); if(d>rad) return;
+    applyDmg(cls,u,base*(1-d/rad*.55));
+    if(u.hp<=0) kill.push(u);
+  });
+  for(const b of S.buildings){
+    if(b.owner===owner||b.hp<=0) continue;
+    const d=Math.hypot(b.x+.5-x,b.y+.5-y); if(d>rad) continue;
+    applyDmg(cls,b,base*(1-d/rad*.55));
+    if(b.hp<=0) kill.push(b);
+  }
+  return kill;
+}
+function target(u,range){
+  const d=U[u.key]; let best=null,bd=range;
+  near(u.x,u.y,range+1,o=>{
+    if(o.owner===u.owner||o.hp<=0) return;
+    const dd=dst(u,o); if(dd<bd&&dd>=d.minR){bd=dd;best=o;}
+  });
+  for(const b of S.buildings){
+    if(b.owner===u.owner||b.hp<=0) continue;
+    const dd=dst(u,b); if(dd<bd&&dd>=d.minR){bd=dd;best=b;}
+  }
+  return best;
+}
+
+/* ═══════════════════════════ EFFECTS ═══════════════════════════ */
+function puff(x,y,n,col,pw){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*7, s=(.5+Math.random()*2.4)*(pw||1);
+    S.fx.push({k:"p",x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.3+Math.random()*.4,max:.7,col});
+  }
+}
+function ringFx(x,y,r,col){ S.fx.push({k:"r",x,y,r,life:.38,max:.38,col}); }
+function tracer(x,y,tx,ty,col,life){ S.fx.push({k:"t",x,y,tx,ty,life:life||.06,max:.06,col}); }
+function wreck(x,y,owner,big){ S.wrecks.push({x,y,owner,life:26,big}); if(S.wrecks.length>140) S.wrecks.shift(); }
+
+/* ═══════════════════════════ UPDATE ═══════════════════════════ */
+function update(dt){
+  if(S.paused||S.over) return;
+  S.t+=dt; regrid();
+
+  /* ── buildings ── */
+  for(const b of S.buildings){
+    if(b.flash>0) b.flash-=dt;
+    const d=B[b.key], p=S.players[b.owner];
+    if(b.hp<b.maxHp*.4) b.smoke=(b.smoke||0)+dt; else b.smoke=0;
+    if(b.smoke>0.55){ b.smoke=0; puff(b.x+.5,b.y+.4,1,"rgba(120,120,120,.7)",.3); }
+
+    if(b.build>0){
+      b.build-=dt;
+      b.hp=Math.min(b.maxHp,b.hp+(b.maxHp*.72)*(dt/Math.max(.1,b.buildT)));
+      if(b.build<=0){ b.build=0; b.hp=b.maxHp; ringFx(b.x+.5,b.y+.5,.9,"rgba(217,164,65,.8)"); }
+      continue;
+    }
+    if(d.sup) p.sup += d.sup*dt*mSup(b.owner)*mEcon(b.owner);
+    if(d.men) p.men = Math.min(p.menCap, p.men + d.men*dt*mMen(b.owner));
+
+    if(b.queue){
+      b.queue.left-=dt;
+      if(b.queue.left<=0){ spawn(b.queue.key,b.owner,b.x,b.y,b.rally); b.queue=null; if(b.owner===HUMAN) sfx("done"); }
+    }
+    if(d.dmg){
+      b.cd-=dt;
+      if(b.cd<=0){
+        let best=null,bd=d.rng;
+        near(b.x+.5,b.y+.5,d.rng+1,o=>{ if(o.owner===b.owner||o.hp<=0)return;
+          const dd=dst(b,o); if(dd<bd){bd=dd;best=o;} });
+        if(best){
+          applyDmg("bunker",best,d.dmg);
+          b.cd=d.rof;
+          tracer(ex(b),ey(b),ex(best),ey(best),FCOL[b.owner]);
+          if(best.hp<=0) killed(best);
+        }
+      }
+    }
+  }
+  for(const o of [HUMAN,AI])
+    S.players[o].menCap=Math.round((48+26*towns(o).length)*mMen(o));
+
+  /* ── research ── */
+  for(let o=0;o<2;o++){
+    const p=S.players[o];
+    if(p.res){ p.res.left-=dt;
+      if(p.res.left<=0){ p.tech[p.res.key]=true; p.res=null; if(o===HUMAN){sfx("tech");say("Research complete.",2.4);} } }
+  }
+
+  /* ── units ── */
+  for(const u of S.units){
+    const d=U[u.key];
+    if(u.flash>0) u.flash-=dt;
+    u.cd-=dt; u.repath-=dt;
+    const rng=d.rng*mRng(u.owner,d.cls);
+
+    if(d.dmg>0){
+      if(u.target&&u.target.hp<=0) u.target=null;
+      if(!u.target) u.target=target(u, u.path?(u.amove?AGGRO:rng):AGGRO);
+    }
+
+    if(u.target){
+      const dd=dst(u,u.target);
+      if(dd<=rng&&dd>=d.minR){
+        if(!u.amove) u.path=null;
+        if(u.cd<=0) fire(u,d,rng);
+      } else if(dd>rng){
+        if(!u.path||u.repath<=0){
+          const p=path(u.x,u.y,ex(u.target),ey(u.target));
+          if(p){u.path=p;u.repath=1.3;} else u.target=null;
+        }
+      } else {                                  // too close: artillery reverses out
+        const a=Math.atan2(u.y-ey(u.target),u.x-ex(u.target));
+        const nx=u.x+Math.cos(a)*d.spd*dt, ny=u.y+Math.sin(a)*d.spd*dt;
+        if(walk(nx|0,ny|0)){u.x=nx;u.y=ny;}
+        u.face=a+Math.PI;
+      }
+    }
+
+    if(u.path&&u.path.length){
+      const n=u.path[0], tx=n.x+.5, ty=n.y+.5;
+      const dx=tx-u.x, dy=ty-u.y, L=Math.hypot(dx,dy);
+      const step=d.spd*mSpd(u.owner,d.cls)*dt;
+      if(L<=step){ u.x=tx;u.y=ty;u.path.shift(); if(!u.path.length){u.path=null;u.amove=null;} }
+      else { u.x+=dx/L*step; u.y+=dy/L*step; u.face=Math.atan2(dy,dx); }
+    }
+  }
+
+  /* ── separation ── */
+  for(const u of S.units){
+    let px=0,py=0,n=0;
+    near(u.x,u.y,SEP*2,o=>{
+      if(o===u||o.owner!==u.owner) return;
+      const dx=u.x-o.x, dy=u.y-o.y, dd=Math.hypot(dx,dy);
+      if(dd>1e-4&&dd<SEP){ px+=dx/dd*(SEP-dd); py+=dy/dd*(SEP-dd); n++; }
+    });
+    if(n){
+      const nx=u.x+px*24*dt, ny=u.y+py*24*dt;
+      if(walk(nx|0,ny|0)){u.x=nx;u.y=ny;}
+    }
+    u.x=Math.max(.2,Math.min(MAP-.2,u.x)); u.y=Math.max(.2,Math.min(MAP-.2,u.y));
+  }
+
+  /* ── shells in flight ── */
+  for(const s of S.shells){
+    s.t+=dt;
+    if(s.t>=s.dur){
+      s.dead=1;
+      const kills=splash(s.tx,s.ty,s.owner,"arty",s.dmg,s.rad);
+      ringFx(s.tx,s.ty,s.rad,"rgba(230,170,70,.85)");
+      puff(s.tx,s.ty,7+((s.rad*3)|0),"#c8913f",1.3);
+      for(const k of kills) killed(k);
+      sfxAt(s.tx,s.ty,"boom");
+    }
+  }
+  if(S.shells.some(s=>s.dead)) S.shells=S.shells.filter(s=>!s.dead);
+
+  /* ── fx ── */
+  for(const f of S.fx){
+    f.life-=dt;
+    if(f.k==="p"){ f.x+=f.vx*dt; f.y+=f.vy*dt; f.vx*=.9; f.vy*=.9; }
+  }
+  if(S.fx.length) S.fx=S.fx.filter(f=>f.life>0);
+  for(const w of S.wrecks) w.life-=dt;
+  if(S.wrecks.some(w=>w.life<=0)) S.wrecks=S.wrecks.filter(w=>w.life>0);
+
+  /* ── vision, ai ── */
+  S.visT-=dt; if(S.visT<=0){ S.visT=.3; computeVision(); }
+  S.aiT-=dt;  if(S.aiT<=0){ S.aiT=DIFF[difficulty].react; aiTick(); }
+
+  /* ── deaths ── */
+  if(S.units.some(u=>u.hp<=0)){
+    for(const u of S.units) if(u.hp<=0) killed(u);
+    S.units=S.units.filter(u=>u.hp>0);
+  }
+  const dead=S.buildings.filter(b=>b.hp<=0);
+  if(dead.length){
+    S.buildings=S.buildings.filter(b=>b.hp>0);
+    for(const b of dead){
+      S.counts[b.owner][b.key]=Math.max(0,(S.counts[b.owner][b.key]||1)-1);
+      killed(b);
+    }
+    if(dead.some(b=>B[b.key].blocks)) rebuildBlocks();
+    for(const b of dead) if(b.key==="hq") endGame(b.owner===HUMAN?"lose":"win");
+    computeVision();
+  }
+  if(S.alertT>0) S.alertT-=dt;
+  S.sel=S.sel.filter(id=>S.units.some(u=>u.id===id));
+  if(S.selB&&!S.buildings.some(b=>b.id===S.selB)) S.selB=null;
+}
+
+function fire(u,d,rng){
+  const tg=u.target;
+  u.cd=d.rof; u.face=Math.atan2(ey(tg)-u.y,ex(tg)-u.x);
+  if(d.shell){
+    const n=d.salvo||1;
+    for(let i=0;i<n;i++){
+      const sp=n>1?(Math.random()-.5)*1.6:0;
+      S.shells.push({x:u.x,y:u.y,tx:ex(tg)+sp,ty:ey(tg)+sp,t:-i*.12,
+        dur:.35+dst(u,tg)*.055, dmg:d.dmg*mDmg(u.owner,d.cls), rad:d.splash||.6,
+        owner:u.owner});
+    }
+    puff(u.x+Math.cos(u.face)*.4,u.y+Math.sin(u.face)*.4,3,"#e0c48a",.7);
+    sfxAt(u.x,u.y,"gun");
+  } else {
+    applyDmg(d.cls,tg,d.dmg*mDmg(u.owner,d.cls));
+    tracer(u.x,u.y,ex(tg),ey(tg),FCOL[u.owner]);
+    sfxAt(u.x,u.y,d.cls==="veh"?"gun":"shot");
+    if(tg.hp<=0) killed(tg);
+  }
+}
+
+function killed(e){
+  if(e.dealt) return; e.dealt=1;
+  const big = e.key in B;
+  wreck(ex(e),ey(e),e.owner,big);
+  puff(ex(e),ey(e), big?18:8, big?"#8a6a3a":FCOL[e.owner], big?1.5:1);
+  if(big) ringFx(ex(e),ey(e),1.4,"rgba(200,120,60,.7)");
+  S.kills[e.owner===HUMAN?AI:HUMAN]++;
+  if(e.owner===HUMAN) raiseAlert(ex(e),ey(e));
+}
+function raiseAlert(x,y){
+  if(S.alertT>0) return;
+  S.alertT=9; S.alertAt={x,y}; sfx("alert");
+}
+
+/* ═══════════════════════════ AI ═══════════════════════════ */
+function aiTick(){
+  const me=AI, p=S.players[me], D=DIFF[difficulty];
+  const ts=towns(me); if(!ts.length) return;
+  const base=hq(me)||ts[0];
+  const own=k=>S.buildings.filter(b=>b.owner===me&&b.key===k);
+  const A=forces(me).filter(u=>u.key!=="engineer");
+  const engs=S.units.filter(u=>u.owner===me&&u.key==="engineer");
+  const scouts=S.units.filter(u=>u.owner===me&&u.cls==="recon");
+
+  /* engineers found towns */
+  for(const e of engs){
+    if(e.path) continue;
+    const x=e.x|0,y=e.y|0;
+    if(canPlace("town",me,x,y)&&p.sup>=costB("town",me)){
+      p.sup-=costB("town",me); mkB("town",me,x,y,false); e.hp=0; continue;
+    }
+    const s=townSpot(me,base); if(s) e.path=path(x,y,s.x,s.y);
+  }
+  /* scouts wander */
+  for(const s of scouts) if(!s.path&&!s.target){
+    const x=(Math.random()*MAP)|0, y=(Math.random()*MAP)|0;
+    if(land(x,y)) s.path=path(s.x,s.y,x,y);
+  }
+
+  /* research: reserve supply, follow a doctrine order */
+  const order=["rations","motor","rifling","plating","conscript","guns","composite",
+               "atrifles","ballistic","howitzers","engines","bodyarm","supply",
+               "maingun","optics","tactics","rockets","radar"];
+  const wantTech = order.find(k=>techReady(me,k)==="ok");
+  const needLabs = order.some(k=>techReady(me,k)==="labs");
+  if(!p.res && wantTech && p.sup>=costT(wantTech,me)+50) startTech(wantTech,me);
+  const reserve = (!p.res && (wantTech||needLabs)) ? Math.min(230,(wantTech?costT(wantTech,me):costB("lab",me))*.7*D.tech) : 0;
+
+  /* construction: pick what is next, then hold supply back until it is affordable */
+  const nb=nextBuild(me,needLabs);
+  let built=false;
+  if(nb && p.sup>=costB(nb,me)){
+    const s = nb==="bunker" ? bunkerSpot(me) : spot(me);
+    if(s){ p.sup-=costB(nb,me); mkB(nb,me,s.x,s.y,false); built=true; }
+  }
+  const buildRes = (!built&&nb) ? costB(nb,me) : 0;
+
+  /* production: build the best thing unlocked, mixed */
+  const wantEng = ts.length<6 && engs.length<1 && p.sup>costB("town",me)+80;
+  for(const b of ts) if(!b.queue&&b.build<=0&&wantEng) queueU(b,"engineer",me);
+
+  const hold=Math.max(reserve,buildRes);
+  const mix=composition(me,A);
+  for(const b of S.buildings){
+    if(b.owner!==me||b.queue||b.build>0) continue;
+    const makes=(B[b.key].makes||[]).filter(k=>k!=="engineer"&&unlockedU(k,me));
+    if(!makes.length) continue;
+    const pick=makes.filter(k=>mix[k]>0).sort((a,c)=>mix[c]-mix[a])[0]||makes[makes.length-1];
+    if(p.sup>hold+costU(pick,me)) queueU(b,pick,me);
+  }
+
+  /* defend */
+  let threat=null,td=Infinity;
+  for(const u of S.units) if(u.owner===HUMAN&&aiSee(u.x,u.y))
+    for(const c of ts){ const d=dst(u,c); if(d<10&&d<td){td=d;threat=u;} }
+  if(threat){
+    for(const u of A) if(!u.target) go(u,threat.x,threat.y);
+    return;
+  }
+
+  /* attack */
+  const wave=D.wave+Math.floor(S.t/85)*3;
+  if(S.t>D.peace && A.length>=wave){
+    const known=S.buildings.filter(b=>b.owner===HUMAN&&aiSee(b.x,b.y));
+    const pool=known.length?known:S.buildings.filter(b=>b.owner===HUMAN);
+    if(pool.length){
+      let tg=pool[0],bs=Infinity;
+      for(const t of pool){
+        const s=dst(base,t)*1.3 + (t.key==="bunker"?25:0) - (t.key==="hq"?12:0);
+        if(s<bs){bs=s;tg=t;}
+      }
+      for(const u of A) if(!u.path&&!u.target){ go(u,tg.x,tg.y); u.amove={x:tg.x,y:tg.y}; }
+    }
+  }
+}
+/* what the AI wants more of, given what it is fielding and what it faces */
+function composition(me,A){
+  const en=forces(me===AI?HUMAN:AI);
+  const enVeh=en.filter(u=>u.cls==="veh").length/Math.max(1,en.length);
+  const have=k=>A.filter(u=>u.key===k).length/Math.max(1,A.length);
+  return {
+    rifle:    .30-have("rifle"),
+    assault:  .15-have("assault"),
+    atteam:   (.10+enVeh*.35)-have("atteam"),
+    scoutcar: .05-have("scoutcar"),
+    halftrk:  .10-have("halftrk"),
+    ltank:    .10-have("ltank"),
+    mtank:    .20-have("mtank"),
+    htank:    .15-have("htank"),
+    fieldgun: .12-have("fieldgun"),
+    howitzer: .10-have("howitzer"),
+    rocket:   .06-have("rocket"),
+  };
+}
+/* what the AI wants to build next, in priority order */
+function nextBuild(me,needLabs){
+  const nT=towns(me).length;
+  const n=k=>S.buildings.filter(b=>b.owner===me&&b.key===k).length;
+  if(n("depot")<Math.min(nT*3,6)) return "depot";
+  if(!n("barracks")) return "barracks";
+  if((needLabs||n("lab")<1)&&n("lab")<Math.min(3,nT+1)) return "lab";
+  if(unlockedB("motor",me)&&!n("motor")) return "motor";
+  if(unlockedB("factory",me)&&!n("factory")) return "factory";
+  if(unlockedB("artpark",me)&&!n("artpark")) return "artpark";
+  if(n("barracks")<nT) return "barracks";
+  if(unlockedB("factory",me)&&n("factory")<2&&nT>=3) return "factory";
+  if(nT>=2&&n("bunker")<nT) return "bunker";
+  if(n("depot")<nT*5) return "depot";
+  if(unlockedB("artpark",me)&&n("artpark")<2&&nT>=4) return "artpark";
+  return null;
+}
+function go(u,x,y){ const p=path(u.x,u.y,x,y); if(p) u.path=p; }
+function spot(o){
+  const ts=towns(o);
+  for(let i=0;i<90;i++){
+    const c=ts[(Math.random()*ts.length)|0], r=B[c.key].rad;
+    const x=c.x+((Math.random()*(r*2+1))|0)-r, y=c.y+((Math.random()*(r*2+1))|0)-r;
+    if(canPlace("depot",o,x,y)) return {x,y};
+  }
+  return null;
+}
+function bunkerSpot(o){
+  const en=hq(o===HUMAN?AI:HUMAN); if(!en) return spot(o);
+  let best=null,bd=Infinity;
+  for(let i=0;i<70;i++){ const s=spot(o); if(!s)continue;
+    const d=Math.hypot(s.x-en.x,s.y-en.y); if(d<bd){bd=d;best=s;} }
+  return best;
+}
+function townSpot(o,from){
+  let best=null,bd=Infinity;
+  for(let i=0;i<400;i++){
+    const x=(Math.random()*MAP)|0, y=(Math.random()*MAP)|0;
+    if(!canPlace("town",o,x,y)) continue;
+    let open=0;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++) if(land(x+dx,y+dy)) open++;
+    if(open<17) continue;
+    const d=Math.hypot(x-from.x,y-from.y);
+    if(d>6&&d<bd){bd=d;best={x,y};}
+  }
+  return best;
+}
+
+/* ═══════════════════════════ CAMERA ═══════════════════════════ */
+const cam={x:0,y:0,z:1,tx:null,ty:null};
+let cw=0,ch=0,dpr=1;
+const cvs=document.getElementById("game"), ctx=cvs.getContext("2d");
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  cw=window.innerWidth; ch=window.innerHeight;
+  cvs.width=cw*dpr; cvs.height=ch*dpr;
+  cvs.style.width=cw+"px"; cvs.style.height=ch+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  clamp();
+}
+addEventListener("resize",resize);
+addEventListener("orientationchange",()=>setTimeout(resize,150));
+function centreOn(tx,ty,smooth){
+  const nx=(tx+.5)*TILE-cw/(2*cam.z), ny=(ty+.5)*TILE-ch/(2*cam.z);
+  if(smooth){ cam.tx=nx; cam.ty=ny; } else { cam.x=nx; cam.y=ny; cam.tx=null; clamp(); }
+}
+function clamp(){
+  cam.z=Math.max(.3,Math.min(2.8,cam.z));
+  const vw=cw/cam.z, vh=ch/cam.z;
+  cam.x=Math.max(-vw*.25,Math.min(MAP*TILE-vw*.75,cam.x));
+  cam.y=Math.max(-vh*.25,Math.min(MAP*TILE-vh*.75,cam.y));
+}
+function camStep(dt){
+  if(cam.tx==null) return;
+  cam.x+=(cam.tx-cam.x)*Math.min(1,dt*7);
+  cam.y+=(cam.ty-cam.y)*Math.min(1,dt*7);
+  if(Math.abs(cam.tx-cam.x)<1&&Math.abs(cam.ty-cam.y)<1) cam.tx=null;
+  clamp();
+}
+const s2w=(sx,sy)=>({x:sx/cam.z+cam.x, y:sy/cam.z+cam.y});
+
+/* ═══════════════════════ TERRAIN: TOPO SHEET ═══════════════════════ */
+let terrain=null, fog=null, fogCtx=null;
+
+function hAt(x,y){
+  x=Math.max(0,Math.min(MAP-1,x)); y=Math.max(0,Math.min(MAP-1,y));
+  return S.H[y*MAP+x];
+}
+function buildTerrain(){
+  terrain=document.createElement("canvas");
+  terrain.width=MAP*TILE; terrain.height=MAP*TILE;
+  const c=terrain.getContext("2d");
+
+  /* elevation bands */
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    const i=y*MAP+x;
+    c.fillStyle=shade(TCOL[S.tiles[i]], (S.H[i]-.45)*.30);
+    c.fillRect(x*TILE,y*TILE,TILE+1,TILE+1);
+  }
+
+  /* contour lines by marching squares on the height field */
+  c.lineWidth=1; c.lineCap="round";
+  for(let lv=.34; lv<.80; lv+=.055){
+    const major = Math.abs(lv-.34)%.165 < .03;
+    c.strokeStyle = major?"rgba(86,70,44,.50)":CONTOUR;
+    c.lineWidth = major?1.4:0.9;
+    c.beginPath();
+    for(let y=0;y<MAP-1;y++)for(let x=0;x<MAP-1;x++){
+      const a=hAt(x,y),b=hAt(x+1,y),d=hAt(x+1,y+1),e=hAt(x,y+1);
+      const idx=(a>lv?8:0)|(b>lv?4:0)|(d>lv?2:0)|(e>lv?1:0);
+      if(idx===0||idx===15) continue;
+      const X=x*TILE+TILE/2, Y=y*TILE+TILE/2;
+      const it=(p,q)=>(lv-p)/((q-p)||1e-6);
+      const T_=[X+TILE*it(a,b),Y], R_=[X+TILE,Y+TILE*it(b,d)];
+      const Bm=[X+TILE*it(e,d),Y+TILE],  L_=[X,Y+TILE*it(a,e)];
+      const seg=(p,q)=>{c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);};
+      switch(idx){
+        case 1:case 14: seg(L_,Bm); break;
+        case 2:case 13: seg(Bm,R_); break;
+        case 3:case 12: seg(L_,R_); break;
+        case 4:case 11: seg(T_,R_); break;
+        case 6:case 9:  seg(T_,Bm); break;
+        case 7:case 8:  seg(L_,T_); break;
+        case 5: seg(L_,T_); seg(Bm,R_); break;
+        case 10:seg(L_,Bm); seg(T_,R_); break;
+      }
+    }
+    c.stroke();
+  }
+
+  /* water: solid, with a hard shoreline */
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    if(S.tiles[y*MAP+x]!==SEA) continue;
+    c.fillStyle="#7d95a0"; c.fillRect(x*TILE,y*TILE,TILE+1,TILE+1);
+  }
+  c.strokeStyle="rgba(40,55,64,.55)"; c.lineWidth=1.6;
+  c.beginPath();
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    if(S.tiles[y*MAP+x]!==SEA) continue;
+    for(const [dx,dy] of [[1,0],[0,1],[-1,0],[0,-1]]) if(land(x+dx,y+dy)){
+      if(dx){ c.moveTo((x+(dx>0?1:0))*TILE,y*TILE); c.lineTo((x+(dx>0?1:0))*TILE,(y+1)*TILE); }
+      else  { c.moveTo(x*TILE,(y+(dy>0?1:0))*TILE); c.lineTo((x+1)*TILE,(y+(dy>0?1:0))*TILE); }
+    }
+  }
+  c.stroke();
+
+  /* woodland stipple, rocky hachures */
+  for(let y=0;y<MAP;y++)for(let x=0;x<MAP;x++){
+    const i=y*MAP+x, t=S.tiles[i], d=S.deco[i], px=x*TILE, py=y*TILE;
+    if(t===WOOD){
+      c.fillStyle="rgba(58,86,46,.55)";
+      for(let k=0;k<5;k++){
+        const ox=((d*(k+3))%17)/17*TILE*.78+TILE*.11;
+        const oy=((d*(k+11))%19)/19*TILE*.78+TILE*.11;
+        c.beginPath(); c.arc(px+ox,py+oy,1.9,0,7); c.fill();
+      }
+    } else if(t===PEAK){
+      c.strokeStyle="rgba(80,66,44,.5)"; c.lineWidth=1;
+      c.beginPath();
+      for(let k=0;k<4;k++){
+        const ox=px+TILE*(.18+k*.2), oy=py+TILE*(.3+(d%3)*.12);
+        c.moveTo(ox,oy); c.lineTo(ox+3,oy+7);
+      }
+      c.stroke();
+    }
+  }
+
+  /* survey grid + references */
+  c.strokeStyle=GRIDLINE; c.lineWidth=1;
+  c.beginPath();
+  for(let i=0;i<=MAP;i+=5){ c.moveTo(i*TILE,0); c.lineTo(i*TILE,MAP*TILE); c.moveTo(0,i*TILE); c.lineTo(MAP*TILE,i*TILE); }
+  c.stroke();
+  c.fillStyle="rgba(70,58,40,.42)"; c.font="9px ui-monospace,monospace"; c.textBaseline="top";
+  for(let gy=0;gy<MAP;gy+=5)for(let gx=0;gx<MAP;gx+=5)
+    c.fillText(String(gx).padStart(2,"0")+String(gy).padStart(2,"0"), gx*TILE+3, gy*TILE+2);
+
+  fog=document.createElement("canvas"); fog.width=MAP; fog.height=MAP;
+  fogCtx=fog.getContext("2d");
+}
+function paintFog(){
+  const img=fogCtx.createImageData(MAP,MAP), d=img.data;
+  for(let i=0;i<MAP*MAP;i++){
+    const v=S.vis[i];
+    d[i*4]=10; d[i*4+1]=13; d[i*4+2]=16;
+    d[i*4+3]= v===2?0 : v===1?120 : 243;
+  }
+  fogCtx.putImageData(img,0,0);
+}
+function shade(hex,a){
+  const n=parseInt(hex.slice(1),16), f=v=>Math.max(0,Math.min(255,Math.round(v*(1+a))));
+  return `rgb(${f(n>>16&255)},${f(n>>8&255)},${f(n&255)})`;
+}
+
+/* ═══════════════════════════ RENDER ═══════════════════════════ */
+let hover=null, blink=0;
+
+function draw(dt){
+  blink+=dt||0;
+  ctx.fillStyle="#0a0d10"; ctx.fillRect(0,0,cw,ch);
+  ctx.save(); ctx.scale(cam.z,cam.z); ctx.translate(-cam.x,-cam.y);
+  const vw=cw/cam.z, vh=ch/cam.z;
+  ctx.drawImage(terrain,cam.x,cam.y,vw,vh,cam.x,cam.y,vw,vh);
+
+  /* control zones */
+  ctx.lineWidth=1.2/cam.z;
+  ctx.setLineDash([5/cam.z,4/cam.z]);
+  for(const o of [HUMAN,AI])for(const c of towns(o)){
+    if(o===AI&&!seenT(c.x,c.y)) continue;
+    const r=B[c.key].rad;
+    ctx.strokeStyle=o===HUMAN?"rgba(47,95,168,.30)":"rgba(168,50,43,.26)";
+    ctx.strokeRect((c.x-r)*TILE,(c.y-r)*TILE,(r*2+1)*TILE,(r*2+1)*TILE);
+  }
+  ctx.setLineDash([]);
+
+  /* wrecks */
+  for(const w of S.wrecks){
+    ctx.globalAlpha=Math.min(.5,w.life/8);
+    ctx.strokeStyle="#3b3126"; ctx.lineWidth=w.big?2.4:1.4;
+    const s=w.big?7:4, X=w.x*TILE, Y=w.y*TILE;
+    ctx.beginPath(); ctx.moveTo(X-s,Y-s); ctx.lineTo(X+s,Y+s);
+    ctx.moveTo(X+s,Y-s); ctx.lineTo(X-s,Y+s); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  /* placement ghost */
+  if(S.placing&&hover){
+    const ok=canPlace(S.placing,HUMAN,hover.x,hover.y)&&S.players[HUMAN].sup>=costB(S.placing,HUMAN);
+    const pulse=.22+.13*Math.sin(blink*7);
+    ctx.fillStyle=ok?`rgba(217,164,65,${pulse+.12})`:`rgba(193,64,56,${pulse})`;
+    ctx.fillRect(hover.x*TILE,hover.y*TILE,TILE,TILE);
+    ctx.strokeStyle=ok?"rgba(217,164,65,.9)":"rgba(193,64,56,.9)"; ctx.lineWidth=1.4/cam.z;
+    ctx.strokeRect(hover.x*TILE,hover.y*TILE,TILE,TILE);
+    if(B[S.placing].rng){
+      ctx.strokeStyle="rgba(217,164,65,.3)";
+      ctx.beginPath(); ctx.arc((hover.x+.5)*TILE,(hover.y+.5)*TILE,B[S.placing].rng*TILE,0,7); ctx.stroke();
+    }
+  }
+
+  /* remembered enemy installations */
+  for(const [,m] of S.memB){
+    if(visT(m.x,m.y)) continue;
+    ctx.globalAlpha=.38; drawB({...m,hp:1,maxHp:1,build:0,queue:null,id:-1},1); ctx.globalAlpha=1;
+  }
+  for(const b of S.buildings){ if(b.owner!==HUMAN&&!visT(b.x,b.y)) continue; drawB(b); }
+
+  /* order markers */
+  for(const id of S.sel){
+    const u=S.units.find(v=>v.id===id);
+    if(!u||!u.path||!u.path.length) continue;
+    const e=u.path[u.path.length-1], X=(e.x+.5)*TILE, Y=(e.y+.5)*TILE;
+    ctx.strokeStyle=u.amove?"rgba(193,64,56,.85)":"rgba(217,164,65,.8)";
+    ctx.lineWidth=1.4/cam.z;
+    const r=7+Math.sin(blink*5)*1.5;
+    ctx.beginPath(); ctx.arc(X,Y,r,0,7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X-10,Y); ctx.lineTo(X+10,Y); ctx.moveTo(X,Y-10); ctx.lineTo(X,Y+10); ctx.stroke();
+  }
+
+  for(const u of S.units){ if(u.owner!==HUMAN&&!visT(u.x,u.y)) continue; drawU(u); }
+
+  /* shells */
+  for(const s of S.shells){
+    if(s.t<0) continue;
+    const k=s.t/s.dur;
+    const X=(s.x+(s.tx-s.x)*k)*TILE, Y=(s.y+(s.ty-s.y)*k)*TILE;
+    const lift=Math.sin(k*Math.PI)*Math.min(26,dst({x:s.x,y:s.y,key:"u"},{x:s.tx,y:s.ty,key:"u"})*3.4);
+    ctx.fillStyle="rgba(0,0,0,.20)";
+    ctx.beginPath(); ctx.ellipse(X,Y,2.6,1.3,0,0,7); ctx.fill();
+    ctx.fillStyle="#2b241a";
+    ctx.beginPath(); ctx.arc(X,Y-lift,2.2,0,7); ctx.fill();
+  }
+
+  /* fx */
+  for(const f of S.fx){
+    const a=f.life/f.max;
+    if(f.k==="t"){
+      ctx.strokeStyle=f.col; ctx.globalAlpha=Math.min(1,a); ctx.lineWidth=1.4/cam.z;
+      ctx.beginPath(); ctx.moveTo(f.x*TILE,f.y*TILE); ctx.lineTo(f.tx*TILE,f.ty*TILE); ctx.stroke();
+    } else if(f.k==="r"){
+      ctx.strokeStyle=f.col; ctx.globalAlpha=Math.max(0,a); ctx.lineWidth=2.2/cam.z;
+      ctx.beginPath(); ctx.arc(f.x*TILE,f.y*TILE,f.r*TILE*(1.35-a*.45),0,7); ctx.stroke();
+    } else {
+      ctx.fillStyle=f.col; ctx.globalAlpha=Math.max(0,a);
+      const s=1.6+ (1-a)*1.8;
+      ctx.fillRect(f.x*TILE-s/2,f.y*TILE-s/2,s,s);
+    }
+    ctx.globalAlpha=1;
+  }
+
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(fog,0,0,MAP,MAP,0,0,MAP*TILE,MAP*TILE);
+  ctx.restore();
+}
+
+/* NATO-style counters */
+function drawB(b,ghost){
+  const d=B[b.key], X=b.x*TILE, Y=b.y*TILE;
+  const done=b.build<=0;
+  const w=b.key==="trench"?TILE-2:TILE-7, h=b.key==="trench"?TILE-2:TILE-9;
+  const cx=X+TILE/2, cy=Y+TILE/2;
+
+  ctx.globalAlpha*=done?1:.6;
+  ctx.fillStyle=b.flash>0?"#fff":FFILL[b.owner];
+  ctx.fillRect(cx-w/2,cy-h/2,w,h);
+  ctx.strokeStyle=b.flash>0?"#fff":"rgba(15,20,25,.85)"; ctx.lineWidth=1.3;
+  ctx.strokeRect(cx-w/2,cy-h/2,w,h);
+  if(!done){
+    ctx.setLineDash([3,3]); ctx.strokeStyle="rgba(255,255,255,.7)";
+    ctx.strokeRect(cx-w/2,cy-h/2,w,h); ctx.setLineDash([]);
+  }
+  if(d.sym){
+    ctx.fillStyle="rgba(255,255,255,.95)";
+    ctx.font="600 10px ui-monospace,monospace"; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(d.sym,cx,cy+.5);
+  }
+  if(ghost){ return; }
+  ctx.globalAlpha=1;
+
+  if(b.id===S.selB){
+    ctx.strokeStyle="#d9a441"; ctx.lineWidth=1.8;
+    ctx.strokeRect(cx-w/2-3,cy-h/2-3,w+6,h+6);
+    if(d.rng){ ctx.strokeStyle="rgba(217,164,65,.25)"; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(cx,cy,d.rng*TILE,0,7); ctx.stroke(); }
+  }
+  if(done&&b.hp<b.maxHp) hbar(cx-w/2,cy-h/2-4,w,b.hp/b.maxHp);
+  if(!done)   hbar(cx-w/2,cy+h/2+2,w,1-b.build/b.buildT,"#8ab4d8");
+  if(b.queue) hbar(cx-w/2,cy+h/2+2,w,1-b.queue.left/b.queue.total,"#d9a441");
+}
+
+function drawU(u){
+  const d=U[u.key], X=u.x*TILE, Y=u.y*TILE;
+  const w=19, h=12.5;
+  if(S.sel.includes(u.id)){
+    ctx.strokeStyle="#d9a441"; ctx.lineWidth=1.4;
+    ctx.setLineDash([3,2.5]); ctx.lineDashOffset=-blink*9;
+    ctx.strokeRect(X-w/2-3,Y-h/2-3,w+6,h+6);
+    ctx.setLineDash([]); ctx.lineDashOffset=0;
+  }
+  /* counter body */
+  ctx.fillStyle=u.flash>0?"#ffffff":FFILL[u.owner];
+  ctx.fillRect(X-w/2,Y-h/2,w,h);
+  ctx.strokeStyle="rgba(12,16,20,.9)"; ctx.lineWidth=1.2;
+  ctx.strokeRect(X-w/2,Y-h/2,w,h);
+
+  /* symbology */
+  ctx.strokeStyle="rgba(255,255,255,.95)"; ctx.lineWidth=1.25;
+  const L=X-w/2, R=X+w/2, T_=Y-h/2, Bo=Y+h/2;
+  ctx.beginPath();
+  switch(u.cls){
+    case "inf":
+      ctx.moveTo(L+2,T_+2); ctx.lineTo(R-2,Bo-2);
+      ctx.moveTo(R-2,T_+2); ctx.lineTo(L+2,Bo-2);
+      break;
+    case "at":
+      ctx.moveTo(L+2,T_+2); ctx.lineTo(R-2,Bo-2);
+      ctx.moveTo(R-2,T_+2); ctx.lineTo(L+2,Bo-2);
+      ctx.moveTo(X-3.5,Bo-2.5); ctx.lineTo(X,T_+3); ctx.lineTo(X+3.5,Bo-2.5);
+      break;
+    case "recon":
+      ctx.moveTo(L+2,Bo-2); ctx.lineTo(R-2,T_+2);
+      break;
+    case "veh":
+      ctx.ellipse(X,Y,w/2-2.5,h/2-2,0,0,7);
+      break;
+    case "arty":
+      ctx.stroke(); ctx.beginPath();
+      ctx.fillStyle="rgba(255,255,255,.95)";
+      ctx.arc(X,Y,2.4,0,7); ctx.fill();
+      if(u.key!=="fieldgun"){ ctx.beginPath(); ctx.arc(X-5.5,Y,2.4,0,7); ctx.fill(); }
+      if(u.key==="rocket"){ ctx.beginPath(); ctx.arc(X+5.5,Y,2.4,0,7); ctx.fill(); }
+      break;
+  }
+  ctx.stroke();
+
+  /* tier pips for tanks */
+  if(u.key==="mtank"||u.key==="htank"){
+    ctx.fillStyle="rgba(255,255,255,.95)";
+    const n=u.key==="htank"?3:2;
+    for(let i=0;i<n;i++) ctx.fillRect(X-w/2+2.5+i*3.2, T_-3.2, 2.2, 2.2);
+  }
+  /* facing tick */
+  ctx.strokeStyle="rgba(255,255,255,.8)"; ctx.lineWidth=1.4;
+  ctx.beginPath();
+  ctx.moveTo(X+Math.cos(u.face)*(w/2), Y+Math.sin(u.face)*(h/2));
+  ctx.lineTo(X+Math.cos(u.face)*(w/2+4.5), Y+Math.sin(u.face)*(h/2+4.5));
+  ctx.stroke();
+
+  if(u.hp<u.maxHp) hbar(X-w/2,Y-h/2-4.5,w,u.hp/u.maxHp);
+}
+function hbar(x,y,w,f,col){
+  ctx.fillStyle="rgba(0,0,0,.62)"; ctx.fillRect(x,y,w,2.6);
+  ctx.fillStyle=col||(f>.5?"#6fbf73":f>.25?"#d9a441":"#c14038");
+  ctx.fillRect(x,y,w*Math.max(0,Math.min(1,f)),2.6);
+}
+
+/* ═══════════════════════════ MINIMAP ═══════════════════════════ */
+const mm=document.getElementById("mm"), mc=mm.getContext("2d");
+let mmT=null, mmClock=0;
+function miniTerrain(){
+  mmT=document.createElement("canvas"); mmT.width=MAP; mmT.height=MAP;
+  const c=mmT.getContext("2d"), img=c.createImageData(MAP,MAP), d=img.data;
+  for(let i=0;i<MAP*MAP;i++){
+    const col=shade(TCOL[S.tiles[i]],(S.H[i]-.45)*.3);
+    const m=col.match(/\d+/g);
+    d[i*4]=+m[0]; d[i*4+1]=+m[1]; d[i*4+2]=+m[2]; d[i*4+3]=255;
+  }
+  c.putImageData(img,0,0);
+}
+function drawMini(){
+  if(!mmT) miniTerrain();
+  const s=216/MAP;
+  mc.imageSmoothingEnabled=false;
+  mc.clearRect(0,0,216,216);
+  mc.drawImage(mmT,0,0,216,216);
+  mc.drawImage(fog,0,0,MAP,MAP,0,0,216,216);
+  for(const [,m] of S.memB) if(!visT(m.x,m.y)){
+    mc.fillStyle="rgba(168,50,43,.5)"; mc.fillRect(m.x*s,m.y*s,Math.max(3,s),Math.max(3,s)); }
+  for(const b of S.buildings){
+    if(b.owner!==HUMAN&&!visT(b.x,b.y)) continue;
+    mc.fillStyle=FCOL[b.owner];
+    const big=(b.key==="hq"||b.key==="town")?s*2:s;
+    mc.fillRect(b.x*s-big/4,b.y*s-big/4,Math.max(3,big),Math.max(3,big));
+  }
+  for(const u of S.units){
+    if(u.owner!==HUMAN&&!visT(u.x,u.y)) continue;
+    mc.fillStyle=FCOL[u.owner]; mc.fillRect(u.x*s-1,u.y*s-1,3,3);
+  }
+  mc.strokeStyle="rgba(255,255,255,.6)"; mc.lineWidth=1.5;
+  mc.strokeRect(cam.x/TILE*s,cam.y/TILE*s,(cw/cam.z)/TILE*s,(ch/cam.z)/TILE*s);
+}
+mm.addEventListener("pointerdown",e=>{
+  const r=mm.getBoundingClientRect();
+  centreOn((e.clientX-r.left)/r.width*MAP,(e.clientY-r.top)/r.height*MAP,true);
+  e.stopPropagation();
+});
+
+/* ═══════════════════════════ SOUND ═══════════════════════════ */
+let AC=null, muted=false;
+function aInit(){ if(AC)return; try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){AC=null;} }
+function sfx(kind,vol){
+  if(!AC||muted) return;
+  const P={select:[560,700,.05,.05,"square"], order:[320,440,.07,.05,"square"],
+    build:[190,300,.15,.05,"triangle"], done:[460,720,.16,.055,"triangle"],
+    tech:[520,880,.4,.05,"triangle"], shot:[170,95,.05,.025,"square"],
+    gun:[110,50,.12,.05,"square"],   boom:[80,32,.3,.07,"sawtooth"],
+    alert:[320,250,.45,.09,"sawtooth"], nope:[170,110,.11,.05,"square"]}[kind];
+  if(!P) return;
+  const t=AC.currentTime, o=AC.createOscillator(), g=AC.createGain();
+  o.connect(g); g.connect(AC.destination); o.type=P[4];
+  o.frequency.setValueAtTime(P[0],t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(30,P[1]),t+P[2]);
+  g.gain.setValueAtTime(P[3]*(vol??1),t);
+  g.gain.exponentialRampToValueAtTime(.0006,t+P[2]);
+  o.start(t); o.stop(t+P[2]+.02);
+}
+/* quieter if it happens off screen, and rate limited so battles don't buzz */
+let sndBudget=0;
+function sfxAt(x,y,kind){
+  if(!AC||muted||sndBudget>6) return;
+  const sx=(x*TILE-cam.x)*cam.z, sy=(y*TILE-cam.y)*cam.z;
+  if(sx<-60||sy<-60||sx>cw+60||sy>ch+60) return;
+  sndBudget++; sfx(kind,.5);
+}
+
+/* ═══════════════════════════ INPUT ═══════════════════════════ */
+const ptr=new Map();
+let dragged=false, pd=0, downT=0, hold=null, downPos=null;
+
+cvs.addEventListener("pointerdown",e=>{
+  aInit(); cvs.setPointerCapture(e.pointerId);
+  ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptr.size===1){
+    dragged=false; downT=performance.now(); downPos={x:e.clientX,y:e.clientY};
+    cam.tx=null;
+    clearTimeout(hold);
+    hold=setTimeout(()=>{ if(!dragged&&ptr.size===1){ atkMove(downPos.x,downPos.y); dragged=true; } },420);
+  }
+  if(ptr.size===2){ clearTimeout(hold); pd=pdist(); }
+});
+cvs.addEventListener("pointermove",e=>{
+  const p=ptr.get(e.pointerId); if(!p) return;
+  const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY;
+  if(ptr.size===1){
+    if(Math.hypot(dx,dy)>2){dragged=true;clearTimeout(hold);}
+    if(S.placing){ const w=s2w(e.clientX,e.clientY); hover={x:(w.x/TILE)|0,y:(w.y/TILE)|0}; }
+    else { cam.x-=dx/cam.z; cam.y-=dy/cam.z; clamp(); }
+  } else if(ptr.size===2){
+    dragged=true;
+    const d=pdist();
+    if(pd>0){
+      const m=pmid(), a=s2w(m.x,m.y);
+      cam.z*=d/pd; clamp();
+      const b=s2w(m.x,m.y);
+      cam.x+=a.x-b.x; cam.y+=a.y-b.y; clamp();
+    }
+    pd=d;
+  }
+});
+function up(e){
+  const one=ptr.size===1; ptr.delete(e.pointerId); clearTimeout(hold);
+  if(ptr.size<2) pd=0;
+  if(one&&!dragged&&performance.now()-downT<420) tap(e.clientX,e.clientY);
+}
+cvs.addEventListener("pointerup",up);
+cvs.addEventListener("pointercancel",e=>{ptr.delete(e.pointerId);clearTimeout(hold);});
+cvs.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const a=s2w(e.clientX,e.clientY);
+  cam.z*=e.deltaY<0?1.12:.89; clamp();
+  const b=s2w(e.clientX,e.clientY);
+  cam.x+=a.x-b.x; cam.y+=a.y-b.y; clamp();
+},{passive:false});
+function pdist(){const[a,b]=[...ptr.values()];return Math.hypot(a.x-b.x,a.y-b.y);}
+function pmid(){const[a,b]=[...ptr.values()];return{x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
+
+function unitAt(wx,wy){
+  let best=null,bd=.85;
+  for(const u of S.units){ if(u.owner!==HUMAN) continue;
+    const d=Math.hypot(u.x-wx,u.y-wy); if(d<bd){bd=d;best=u;} }
+  return best;
+}
+function tap(sx,sy){
+  if(S.over) return;
+  const w=s2w(sx,sy), wx=w.x/TILE, wy=w.y/TILE, tx=wx|0, ty=wy|0;
+
+  if(S.placing){
+    const k=S.placing, c=costB(k,HUMAN);
+    if(!canPlace(k,HUMAN,tx,ty)){ say("Outside your control zone.",1.6); sfx("nope"); return; }
+    if(S.players[HUMAN].sup<c){ say("Not enough supply.",1.6); sfx("nope"); return; }
+    S.players[HUMAN].sup-=c; mkB(k,HUMAN,tx,ty,false); sfx("build");
+    if(k!=="trench"){ S.placing=null; hover=null; }
+    return;
+  }
+  if(S.rally&&S.selB){
+    const b=S.buildings.find(z=>z.id===S.selB);
+    if(b){ b.rally={x:tx,y:ty}; say("Rally point set.",1.6); sfx("order"); }
+    S.rally=false; return;
+  }
+  const hit=unitAt(wx,wy);
+  if(hit){
+    const now=performance.now();
+    if(S.lastTapId===hit.id&&now-S.lastTapT<430){
+      S.sel=S.units.filter(u=>u.owner===HUMAN&&u.key===hit.key&&onScreen(u)).map(u=>u.id);
+      say(`${S.sel.length} × ${U[hit.key].name} selected.`,1.6);
+    } else S.sel=[hit.id];
+    S.lastTapId=hit.id; S.lastTapT=now; S.selB=null; sfx("select"); return;
+  }
+  const b=bAt(tx,ty);
+  if(b&&b.owner===HUMAN&&!S.sel.length){ S.selB=b.id; sfx("select"); return; }
+  if(S.sel.length){ order(tx,ty,wx,wy,false); return; }
+  S.selB=null;
+}
+function atkMove(sx,sy){
+  if(!S.sel.length||S.placing||S.over) return;
+  const w=s2w(sx,sy), wx=w.x/TILE, wy=w.y/TILE;
+  order(wx|0,wy|0,wx,wy,true); say("Attack-move ordered.",1.6);
+}
+function order(tx,ty,wx,wy,am){
+  let en=bAt(tx,ty); if(!en||en.owner===HUMAN) en=null;
+  if(!en) for(const u of S.units)
+    if(u.owner!==HUMAN&&visT(u.x,u.y)&&Math.hypot(u.x-wx,u.y-wy)<.95){en=u;break;}
+  let i=0;
+  for(const id of S.sel){
+    const u=S.units.find(v=>v.id===id); if(!u) continue;
+    u.target=en||null; u.amove=am?{x:tx,y:ty}:null; u.repath=1.2;
+    const o=ring(i++);
+    const gx=Math.max(0,Math.min(MAP-1,tx+o.x)), gy=Math.max(0,Math.min(MAP-1,ty+o.y));
+    const p=path(u.x,u.y,gx,gy); if(p) u.path=p;
+  }
+  sfx("order");
+}
+function ring(i){
+  if(!i) return {x:0,y:0};
+  const r=1+Math.floor((i-1)/8), a=((i-1)%8)/8*Math.PI*2;
+  return {x:Math.round(Math.cos(a)*r), y:Math.round(Math.sin(a)*r)};
+}
+function onScreen(u){
+  const x=(u.x*TILE-cam.x)*cam.z, y=(u.y*TILE-cam.y)*cam.z;
+  return x>-40&&y>-40&&x<cw+40&&y<ch+40;
+}
+
+/* ═══════════════════════════ UI ═══════════════════════════ */
+const el=id=>document.getElementById(id);
+let msg="", msgT=0, rowSig="", treeSig="";
+function say(m,t){ msg=m; msgT=t||1.8; }
+
+function ui(){
+  const p=S.players[HUMAN];
+  el("rMoney").textContent=Math.floor(p.sup);
+  const men=el("rMen"); men.textContent=Math.floor(p.men)+"/"+p.menCap;
+  men.className=p.men<12?"low":"";
+  el("rArmy").textContent=forces(HUMAN).filter(u=>u.key!=="engineer").length;
+
+  /* status block */
+  const L=labs(HUMAN);
+  let st=`TOWNS <b>${towns(HUMAN).length}</b>  LABS <b>${L}</b>  KILLS <b>${S.kills[HUMAN]}</b>`;
+  if(p.res){ st+=`<br>RESEARCHING <b>${TECH[p.res.key].name.toUpperCase()}</b> ${Math.ceil(p.res.left)}s`;
+    el("resFill").style.width=(104*(1-p.res.left/p.res.total))+"px"; }
+  else el("resFill").style.width="0px";
+  const sl=el("statLine"); if(sl.innerHTML!==st) sl.innerHTML=st;
+
+  el("alert").classList.toggle("show",S.alertT>0);
+  el("bTree").classList.toggle("on", !!p.res);
+
+  const out=[]; const row={appendChild:b=>out.push(b)}; let text="";
+
+  if(S.placing){
+    text=`Siting <em>${B[S.placing].name}</em> — must be inside a town's control zone`;
+    row.appendChild(card("Done","",()=>{S.placing=null;hover=null;},true,true));
+  }
+  else if(S.rally) text="Tap where new units should form up";
+  else if(S.sel.length){
+    const u=S.units.find(v=>v.id===S.sel[0]);
+    if(u){
+      const d=U[u.key];
+      if(S.sel.length>1) text=`<em>${S.sel.length}</em> units — tap to move, hold to attack-move`;
+      else {
+        const strong=Object.entries(MTX[d.cls]||{}).filter(([,v])=>v>=1.4).map(([k])=>CLASS_NAME[k]);
+        text=`<em>${d.name}</em> · ${Math.ceil(u.hp)}/${u.maxHp} hp`+
+             (strong.length?` · strong vs ${strong.join(", ")}`:"")+
+             (d.minR?` · min range ${d.minR}`:"");
+      }
+      if(u.key==="engineer"&&S.sel.length===1){
+        const x=u.x|0,y=u.y|0, ok=canPlace("town",HUMAN,x,y), c=costB("town",HUMAN);
+        row.appendChild(card("Found town","◇ "+c,()=>{
+          if(!canPlace("town",HUMAN,u.x|0,u.y|0)){say("Too close to another town.",1.8);sfx("nope");return;}
+          if(S.players[HUMAN].sup<c){say("Not enough supply.",1.8);sfx("nope");return;}
+          S.players[HUMAN].sup-=c; mkB("town",HUMAN,u.x|0,u.y|0,false);
+          u.hp=0; S.sel=[]; sfx("done"); say("Town founded.",2.2);
+        }, ok&&p.sup>=c, ok&&p.sup>=c));
+      }
+      row.appendChild(card("Hold","",()=>{
+        for(const id of S.sel){const v=S.units.find(z=>z.id===id); if(v){v.path=null;v.target=null;v.amove=null;}}
+        S.sel=[];
+      },true));
+    }
+  }
+  else if(S.selB){
+    const b=S.buildings.find(z=>z.id===S.selB);
+    if(b){
+      const d=B[b.key];
+      if(b.build>0) text=`<em>${d.name}</em> under construction · ${Math.ceil(b.build)}s`;
+      else if(b.queue) text=`<em>${d.name}</em> · ${U[b.queue.key].name} in ${Math.ceil(b.queue.left)}s`;
+      else text=`<em>${d.name}</em> · ${Math.ceil(b.hp)}/${b.maxHp} hp`;
+      const free=b.build<=0&&!b.queue;
+      for(const k of (d.makes||[])){
+        if(!unlockedU(k,HUMAN)) continue;
+        const uu=U[k], c=costU(k,HUMAN);
+        row.appendChild(card(uu.name,`◇${c} ▪${uu.men}`,()=>{
+          if(!free){say(b.queue?"Already building.":"Not finished yet.",1.5);sfx("nope");return;}
+          if(queueU(b,k,HUMAN)) sfx("build");
+          else {say(p.sup<c?"Not enough supply.":"Not enough manpower.",1.8);sfx("nope");}
+        }, free&&p.sup>=c&&p.men>=uu.men));
+      }
+      const locked=(d.makes||[]).filter(k=>!unlockedU(k,HUMAN));
+      if(locked.length) row.appendChild(card("Locked",TECH[U[locked[0]].req].name,()=>openTree(),false));
+      if(d.makes) row.appendChild(card("Rally","",()=>{S.rally=true;},true));
+    }
+  }
+  else {
+    text="Select a unit or installation";
+    for(const k of ["depot","barracks","lab","motor","factory","artpark","radar","bunker","trench"]){
+      if(!unlockedB(k,HUMAN)) continue;
+      const c=costB(k,HUMAN);
+      row.appendChild(card(B[k].name,"◇ "+c,()=>{S.placing=k;sfx("select");},p.sup>=c));
+    }
+    row.appendChild(card("All forces","",()=>{
+      S.sel=forces(HUMAN).filter(u=>u.key!=="engineer").map(u=>u.id); S.selB=null;
+      if(!S.sel.length){say("No combat units.",1.6);sfx("nope");} else sfx("select");
+    },true));
+    row.appendChild(card("Idle","",()=>{
+      S.sel=forces(HUMAN).filter(u=>!u.path&&!u.target&&u.key!=="engineer").map(u=>u.id);
+      S.selB=null; if(!S.sel.length) say("Nothing idle.",1.4); else sfx("select");
+    },true));
+  }
+  if(msgT>0) text=`<s>${msg}</s>`;
+
+  const sig=out.map(b=>b.className+"|"+b.innerHTML).join("~");
+  if(sig!==rowSig){ rowSig=sig; const r=el("row"); r.innerHTML=""; for(const b of out) r.appendChild(b); }
+  if(el("ctx").innerHTML!==text) el("ctx").innerHTML=text;
+
+  if(el("tree").classList.contains("show")) drawTree();
+}
+function card(n,sub,fn,on,hot){
+  const b=document.createElement("button");
+  b.className="card"+(on?"":" off")+(hot?" hot":"");
+  b.innerHTML=`<div class="n">${n}</div>`+(sub?`<div class="c">${sub}</div>`:"");
+  b.addEventListener("click",e=>{e.stopPropagation();fn();ui();});
+  return b;
+}
+
+/* ── research tree overlay ── */
+function openTree(){ el("tree").classList.add("show"); treeSig=""; drawTree(); }
+function drawTree(){
+  const p=S.players[HUMAN], L=labs(HUMAN);
+  el("treeLabs").textContent=`LABS ${L}`;
+  const sig=TKEYS.map(k=>techReady(HUMAN,k)+(p.sup>=costT(k,HUMAN)?"1":"0")).join("")+L+(p.res?p.res.key:"");
+  if(sig===treeSig) return;
+  treeSig=sig;
+  const body=el("treeBody"); body.innerHTML="";
+  for(const br of BRANCHES){
+    const sec=document.createElement("div"); sec.className="branch";
+    sec.innerHTML=`<h3>${br}</h3>`;
+    const nodes=document.createElement("div"); nodes.className="nodes";
+    for(const k of TKEYS){
+      const t=TECH[k]; if(t.br!==br) continue;
+      const st=techReady(HUMAN,k), c=costT(k,HUMAN);
+      const n=document.createElement("button");
+      let cls="lock", note="";
+      if(st==="done"){ cls="done"; note="RESEARCHED"; }
+      else if(p.res&&p.res.key===k){ cls="can"; note=`${Math.ceil(p.res.left)}s REMAINING`; }
+      else if(st==="labs"){ note=`NEEDS ${t.tier} LAB${t.tier>1?"S":""}`; }
+      else if(st==="pre"){ note=`NEEDS ${t.pre.map(x=>TECH[x].name).join(" + ").toUpperCase()}`; }
+      else if(p.res){ note="LAB BUSY"; }
+      else if(p.sup<c){ note=`◇ ${c} · SHORT ${Math.ceil(c-p.sup)}`; }
+      else { cls="can"; note=`◇ ${c} · ${t.time}s · TAP`; }
+      n.className="node "+cls;
+      n.innerHTML=`<div class="t">${t.name}</div><div class="d">${t.d}</div><div class="m">${note}</div>`+
+        (p.res&&p.res.key===k?`<div class="bar" style="width:${132*(1-p.res.left/p.res.total)}px"></div>`:"");
+      n.addEventListener("click",()=>{
+        if(startTech(k,HUMAN)){ sfx("build"); treeSig=""; drawTree(); }
+        else { sfx("nope"); say(techReady(HUMAN,k)==="labs"?"Build more Research Labs.":"Cannot research that yet.",2); }
+      });
+      nodes.appendChild(n);
+    }
+    sec.appendChild(nodes); body.appendChild(sec);
+  }
+}
+
+/* ═══════════════════════════ CHROME ═══════════════════════════ */
+el("bSpeed").addEventListener("click",()=>{ S.speed=S.speed===1?2:S.speed===2?3:1; el("bSpeed").textContent=S.speed+"×"; });
+el("bSound").addEventListener("click",()=>{ muted=!muted; el("bSound").textContent=muted?"✕":"♪"; });
+el("bMenu").addEventListener("click",()=>{ S.paused=!S.paused; el("bMenu").textContent=S.paused?"▶":"❙❙"; say(S.paused?"Paused":"",S.paused?9999:.1); });
+el("bTree").addEventListener("click",openTree);
+el("bTreeX").addEventListener("click",()=>el("tree").classList.remove("show"));
+el("alert").addEventListener("click",()=>{ if(S.alertAt) centreOn(S.alertAt.x,S.alertAt.y,true); S.alertT=0; });
+
+for(const b of document.querySelectorAll("#diffOpt button")) b.addEventListener("click",()=>{
+  document.querySelectorAll("#diffOpt button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); difficulty=+b.dataset.d; });
+for(const b of document.querySelectorAll("#sizeOpt button")) b.addEventListener("click",()=>{
+  document.querySelectorAll("#sizeOpt button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); MAP=+b.dataset.s; });
+
+el("go").addEventListener("click",()=>{
+  aInit(); mmT=null; newGame(); ui();
+  el("start").classList.remove("show"); el("end").classList.remove("show");
+});
+el("endB").addEventListener("click",()=>{ el("end").classList.remove("show"); el("start").classList.add("show"); });
+
+function endGame(r){
+  S.over=r;
+  const m=Math.floor(S.t/60), s=Math.floor(S.t%60);
+  el("endT").textContent=r==="win"?"OBJECTIVE SECURED":"COMMAND OVERRUN";
+  const techN=Object.keys(S.players[HUMAN].tech).length;
+  el("endP").textContent = r==="win"
+    ? `Enemy HQ destroyed in ${m}m ${s}s on ${DIFF[difficulty].name}. ${towns(HUMAN).length} towns held, ${techN} technologies researched, ${S.kills[HUMAN]} kills.`
+    : `HQ lost after ${m}m ${s}s. You held ${towns(HUMAN).length} towns to their ${towns(AI).length} and researched ${techN} to their ${Object.keys(S.players[AI].tech).length}.`;
+  el("end").classList.add("show");
+}
+
+/* ═══════════════════════════ BOOT ═══════════════════════════ */
+resize(); newGame(); ui();
+let last=performance.now(), uiT=0;
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  sndBudget=0;
+  const steps=S.paused?0:S.speed;
+  for(let i=0;i<steps;i++) update(dt);
+  camStep(dt);
+  if(msgT>0) msgT-=dt;
+  draw(dt);
+  mmClock-=dt; if(mmClock<=0){ mmClock=.12; drawMini(); }
+  uiT-=dt;   if(uiT<=0){ uiT=.2; ui(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
